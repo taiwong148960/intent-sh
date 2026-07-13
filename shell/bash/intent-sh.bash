@@ -139,20 +139,33 @@ __intent_sh_rewrite() {
             "$request_id"
     } | command intent-sh adapter rewrite --protocol "$__intent_sh_protocol_version" > "$tmp" &
     __intent_sh_provider_pid=$!
-    trap '__intent_sh_interrupted=1; if [[ -n $__intent_sh_provider_pid ]]; then kill -INT "$__intent_sh_provider_pid" 2>/dev/null; fi; if ((!__intent_sh_cancel_message_shown)); then __intent_sh_cancel_message_shown=1; __intent_sh_message "cancelled"; fi' INT
+    trap '__intent_sh_interrupted=1; if [[ -n $__intent_sh_provider_pid ]]; then kill -CONT "$__intent_sh_provider_pid" 2>/dev/null; kill -INT "$__intent_sh_provider_pid" 2>/dev/null; fi; if ((!__intent_sh_cancel_message_shown)); then __intent_sh_cancel_message_shown=1; __intent_sh_message "cancelled"; fi' INT
     __intent_sh_message "generating... (Ctrl+C to cancel)"
     if [[ -n $__intent_sh_tty_state ]]; then
         while kill -0 "$__intent_sh_provider_pid" 2>/dev/null; do
             local __intent_sh_key=
             if IFS= read -r -s -n 1 -t 0.05 __intent_sh_key < /dev/tty && [[ $__intent_sh_key == $'\003' ]]; then
                 __intent_sh_interrupted=1
+            fi
+            if ((__intent_sh_interrupted)); then
+                kill -CONT "$__intent_sh_provider_pid" 2>/dev/null
                 kill -INT "$__intent_sh_provider_pid" 2>/dev/null
             fi
         done
         wait "$__intent_sh_provider_pid" || command_status=$?
         command stty "$__intent_sh_tty_state" < /dev/tty 2>/dev/null
     else
-        wait "$__intent_sh_provider_pid" || command_status=$?
+        while true; do
+            wait "$__intent_sh_provider_pid" || command_status=$?
+            if ! kill -0 "$__intent_sh_provider_pid" 2>/dev/null; then
+                break
+            fi
+            if ((!__intent_sh_interrupted)); then
+                break
+            fi
+            kill -CONT "$__intent_sh_provider_pid" 2>/dev/null
+            kill -INT "$__intent_sh_provider_pid" 2>/dev/null
+        done
     fi
     if [[ -n $__intent_sh_previous_int_trap ]]; then
         builtin eval "$__intent_sh_previous_int_trap"
