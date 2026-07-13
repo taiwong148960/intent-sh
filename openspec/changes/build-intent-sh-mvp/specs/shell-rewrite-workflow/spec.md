@@ -1,11 +1,15 @@
 ## ADDED Requirements
 
 ### Requirement: Supported interactive shell adapters
-The system SHALL provide interactive adapters for Zsh and Bash on macOS and Linux, with `Alt+G` bound to rewrite or regenerate and `Alt+U` bound to undo. The adapters MUST use the shell's editable-line API and MUST NOT use the clipboard, terminal-screen scraping, Accessibility APIs, or simulated global keystrokes.
+The system SHALL provide interactive adapters for Zsh and Bash 4.0 or newer on macOS and Linux, with `Alt+G` bound to rewrite or regenerate and `Alt+U` bound to undo. The adapters MUST use the shell's editable-line API and MUST NOT use the clipboard, terminal-screen scraping, Accessibility APIs, or simulated global keystrokes.
 
 #### Scenario: Activate a supported adapter
 - **WHEN** a user loads the version-compatible adapter in an interactive Zsh or Bash session
 - **THEN** the rewrite and undo widgets are available on the default bindings without replacing the terminal application
+
+#### Scenario: Reject stock macOS Bash 3.2
+- **WHEN** a user attempts to initialize the Bash adapter in Bash older than 4.0
+- **THEN** initialization fails before installing bindings and explains that the shell lacks the required `READLINE_LINE` and `READLINE_POINT` interface
 
 #### Scenario: Reject an incompatible adapter protocol
 - **WHEN** an adapter and binary report different protocol versions

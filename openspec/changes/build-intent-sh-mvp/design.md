@@ -1,6 +1,6 @@
 ## Context
 
-`intent-sh` starts from an empty implementation repository and a detailed product brief. The product is deliberately smaller than an agent: an interactive Zsh or Bash user asks for one command by pressing a key, the current editable buffer is replaced, and the shell remains the only component that can execute it. The MVP targets macOS and Linux on amd64 and arm64, supports Chinese and English intent, and reuses an existing Claude Code or Codex CLI login rather than handling model credentials.
+`intent-sh` starts from an empty implementation repository and a detailed product brief. The product is deliberately smaller than an agent: an interactive Zsh or Bash 4.0+ user asks for one command by pressing a key, the current editable buffer is replaced, and the shell remains the only component that can execute it. The MVP targets macOS and Linux on amd64 and arm64, supports Chinese and English intent, and reuses an existing Claude Code or Codex CLI login rather than handling model credentials. Stock macOS Bash 3.2 is incompatible; stock macOS Zsh remains supported.
 
 The security boundary crosses four independently fallible layers: a shell editing API, the `intent-sh` process, an external provider CLI, and model output. Shell code is difficult to quote safely, provider CLIs can change, and destructive-command detection is necessarily heuristic. The design therefore keeps the adapter small, invokes providers without an intermediary shell, validates output locally, and never treats provider metadata as authorization to execute.
 
@@ -57,7 +57,7 @@ Alternatives considered: a shell-only implementation would duplicate quoting, JS
 
 Shell adapters call `intent-sh adapter rewrite --protocol 1` and exchange a fixed-order set of NUL-terminated fields over stdin/stdout. Fields include action, shell and version, current buffer and cursor, original buffer, previous generated command, generation index, and request ID. The reply includes status, replacement or question, provider, locally derived risk and reason, and the echoed request ID.
 
-NUL framing allows arbitrary shell text without `eval`, JSON escaping in shell, command-line leakage, a `jq` dependency, or lossy command substitution. Both Bash 3.2 and Zsh can read fields from process substitution with `read -d`. The Go `Request` and `Result` structures remain the canonical versioned contract and have JSON fixtures; the model-facing request and result are strict JSON.
+NUL framing allows arbitrary shell text without `eval`, JSON escaping in shell, command-line leakage, a `jq` dependency, or lossy command substitution. Supported Bash and Zsh versions can read fields from process substitution with `read -d`. The Go `Request` and `Result` structures remain the canonical versioned contract and have JSON fixtures; the model-facing request and result are strict JSON.
 
 The adapter protocol has an explicit version so incompatible binaries fail with an actionable message instead of misassigning fields. Output is fully buffered and only emitted after validation, so a partial provider response cannot become a buffer replacement.
 
@@ -81,7 +81,9 @@ Alternatives considered: background jobs keep editing responsive but require a r
 
 The Zsh adapter uses ZLE widgets to access `BUFFER` and `CURSOR`, `zle -M` for messages, and a wrapped `accept-line` widget for dangerous confirmation. The wrapper calls the original `accept-line` only when the generated-command fingerprint is not dangerous or is already armed.
 
-The Bash adapter uses `bind -x`, `READLINE_LINE`, and `READLINE_POINT`. To preserve normal Readline execution semantics, Enter is a macro composed of a private guard key followed by a private continuation key. The guard callback dynamically maps the continuation to either `accept-line` or a no-op for that keypress. On the first Enter for an unchanged dangerous generated command it selects the no-op, renders the warning, and arms the fingerprint; on the second it selects `accept-line`. Every guard invocation compares the current buffer fingerprint, so editing disarms the confirmation. This behavior must be proven on the oldest supported Bash 3.2 before the remaining Bash adapter work proceeds.
+The Bash adapter requires Bash 4.0+ and uses `bind -x`, `READLINE_LINE`, and `READLINE_POINT`. To preserve normal Readline execution semantics, Enter is a macro composed of a private guard key followed by a private continuation key. The guard callback dynamically maps the continuation to either `accept-line` or a no-op for that keypress. On the first Enter for an unchanged dangerous generated command it selects the no-op, renders the warning, and arms the fingerprint; on the second it selects `accept-line`. Every guard invocation compares the current buffer fingerprint, so editing disarms the confirmation.
+
+The compatibility spike proved that macOS Bash 3.2 runs `bind -x` callbacks without populating `READLINE_LINE` or `READLINE_POINT`. It therefore cannot implement full-buffer rewrite or exact-command confirmation through a thin adapter. Initialization and doctor fail closed on Bash versions below 4.0 and guide macOS users to stock Zsh or a separately installed modern Bash. A native Readline extension was rejected because it would add platform-specific compiled components and weaken the single-binary distribution model.
 
 Adapters never call `eval` on generated output and never run the generated command themselves. Review-risk commands receive a yellow message but retain ordinary Enter behavior. Dangerous commands receive a red reason; a rewrite, undo, cancellation, or buffer change clears the armed state. The adapters expose fixed MVP defaults (`Alt+G`, `Alt+U`, and normal `Ctrl+C` cancellation) and detect conflicting bindings during setup/doctor rather than silently replacing unknown custom behavior.
 
@@ -158,13 +160,14 @@ No telemetry or persistent logs are added. Errors are observable through status 
 ## Risks / Trade-offs
 
 - [Provider CLI flags or output formats drift] -> Centralize each invocation, record supported version ranges, make `doctor` probe compatibility, and exercise argument/output contracts with fixtures before release.
-- [Bash Readline cannot reliably suppress the continuation key on all supported versions] -> Make a Bash 3.2/5.x PTY spike the first adapter task and block Bash completion until first/second Enter tests pass; do not fall back to automatic `eval`.
+- [Bash Readline behavior varies across supported versions] -> Require Bash 4.0+, test the continuation macro on modern macOS and Linux Bash, test that Bash 3.2 fails before binding, and never fall back to automatic `eval`.
 - [Risk rules produce false negatives or false positives] -> Default unknown constructs to review, make rules structural and reasoned, require double confirmation for known dangerous patterns, and state the limits prominently.
 - [Provider latency freezes line editing] -> Show status, enforce a 30-second default deadline, make `Ctrl+C` kill the process tree, and defer asynchronous jobs until the synchronous workflow has usage data.
 - [Shell quoting or protocol confusion becomes command injection] -> Use NUL framing, fixed field order, version negotiation, bounded fields, and no sourcing/evaluation of provider-controlled output.
 - [Portable parsing rejects valid Zsh syntax] -> Ask for portable commands in the prompt, validate with both an AST policy and the target shell, and return a clear regeneration message rather than weakening validation.
 - [Adapter Enter wrapping conflicts with existing custom bindings] -> Detect and report conflicts during setup/doctor, keep startup changes explicit, and document removal; configurable shortcuts remain post-MVP.
 - [The external CLI can still access its user configuration] -> Use bare/ignore-user-config modes where supported, an empty working directory and no model tools, while retaining only the configuration needed for official login; document that provider CLI behavior is part of the trust boundary.
+- [Thin shell callbacks cannot observe an edit restored byte-for-byte between callbacks] -> Scope the guard to the exact currently visible command, disarm whenever a differing value is observed, never accept a different value under an old fingerprint, and document this editor-API limit explicitly.
 
 ## Migration Plan
 
@@ -175,4 +178,4 @@ Rollback is removal of that startup line and the `intent-sh` binary. The optiona
 ## Open Questions
 
 - Which exact minimum Claude Code and Codex CLI versions satisfy all isolation and structured-output flags must be recorded from compatibility tests during implementation; the architecture does not depend on a particular version string.
-- Whether the Bash continuation-macro technique is reliable on every supported Readline build is intentionally resolved by the first Bash PTY spike. If it cannot meet the specified behavior, Bash support must remain experimental rather than weakening the confirmation contract.
+- No additional Bash 3.2 fallback is planned; the compatibility boundary is Bash 4.0+ or Zsh.

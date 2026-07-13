@@ -1,0 +1,1 @@
+{"status":"ok","command":"lsof -nP -iTCP:8080 -sTCP:LISTEN","explanation":"Shows the process listening on port 8080","assumptions":["macOS or Linux"],"riskHint":"safe"}

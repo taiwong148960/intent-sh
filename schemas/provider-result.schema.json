@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/taiwong148960/intent-sh/schemas/provider-result.schema.json",
+  "title": "intent-sh provider result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "command", "explanation", "assumptions", "riskHint", "question"],
+  "properties": {
+    "status": {
+      "description": "Use ok for a command result or clarify for a question.",
+      "enum": ["ok", "clarify"]
+    },
+    "command": {
+      "description": "Non-null only for status ok; null for status clarify.",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 8192
+    },
+    "explanation": {
+      "description": "Non-null only for status ok; null for status clarify.",
+      "type": ["string", "null"],
+      "maxLength": 1024
+    },
+    "assumptions": {
+      "description": "Non-null only for status ok; null for status clarify.",
+      "type": ["array", "null"],
+      "maxItems": 16,
+      "items": { "type": "string", "maxLength": 256 }
+    },
+    "riskHint": {
+      "description": "Non-null only for status ok; null for status clarify.",
+      "type": ["string", "null"],
+      "enum": ["safe", "review", "dangerous", null]
+    },
+    "question": {
+      "description": "Non-null only for status clarify; null for status ok.",
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 1024
+    }
+  }
+}

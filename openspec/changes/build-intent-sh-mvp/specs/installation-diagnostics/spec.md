@@ -42,7 +42,7 @@ Configuration SHALL use `${XDG_CONFIG_HOME:-$HOME/.config}/intent-sh/config.toml
 - **THEN** rewrite fails before invoking a provider and reports the exact configuration field to correct
 
 ### Requirement: Diagnose local readiness without leaking secrets
-`intent-sh doctor` SHALL check supported platform and architecture, config validity, adapter/binary protocol compatibility, default-key conflicts, configured provider executable and compatible version, and official CLI login readiness. It SHALL emit stable check identifiers, actionable guidance, and no tokens or credential-file contents.
+`intent-sh doctor` SHALL check supported platform and architecture, shell compatibility including the Bash 4.0 minimum, config validity, adapter/binary protocol compatibility, default-key conflicts, configured provider executable and compatible version, and official CLI login readiness. It SHALL emit stable check identifiers, actionable guidance, and no tokens or credential-file contents.
 
 #### Scenario: At least one provider is ready
 - **WHEN** the configuration is valid, the adapter is compatible, and a configured provider is installed and logged in
@@ -59,6 +59,10 @@ Configuration SHALL use `${XDG_CONFIG_HOME:-$HOME/.config}/intent-sh/config.toml
 #### Scenario: Keybinding conflict is detected
 - **WHEN** a default `Alt+G`, `Alt+U`, or Enter guard binding conflicts with an existing unsupported custom binding
 - **THEN** doctor reports the shell and key conflict rather than silently claiming the adapter is ready
+
+#### Scenario: Bash is too old
+- **WHEN** doctor inspects a Bash version older than 4.0
+- **THEN** it reports the shell as incompatible and recommends stock Zsh or an installed modern Bash without modifying the system shell
 
 ### Requirement: Fail closed on compatibility problems
 The adapter and binary SHALL negotiate their protocol version, and provider compatibility checks SHALL identify unsupported CLI versions or missing required isolation/structured-output features. An incompatible component MUST NOT perform a rewrite.

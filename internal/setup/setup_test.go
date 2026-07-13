@@ -1,0 +1,131 @@
+package setup
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"syscall"
+	"testing"
+	"time"
+)
+
+func TestInspectSelectsLikelyStartupFile(t *testing.T) {
+	t.Parallel()
+	home := "/home/tester"
+	tests := []struct {
+		name   string
+		shell  string
+		goos   string
+		zdot   string
+		exists map[string]bool
+		want   string
+	}{
+		{"zsh default", ShellZsh, "linux", "", nil, filepath.Join(home, ".zshrc")},
+		{"zsh zdotdir", ShellZsh, "darwin", "/config/zsh", nil, "/config/zsh/.zshrc"},
+		{"mac bash default", ShellBash, "darwin", "", nil, filepath.Join(home, ".bash_profile")},
+		{"mac bash existing profile", ShellBash, "darwin", "", map[string]bool{filepath.Join(home, ".profile"): true}, filepath.Join(home, ".profile")},
+		{"linux bash default", ShellBash, "linux", "", nil, filepath.Join(home, ".bashrc")},
+		{"linux bash existing login", ShellBash, "linux", "", map[string]bool{filepath.Join(home, ".bash_profile"): true}, filepath.Join(home, ".bash_profile")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			plan, err := Inspect(test.shell, Options{
+				Home: home, ZDOTDIR: test.zdot, GOOS: test.goos,
+				Exists: func(path string) bool { return test.exists[path] },
+				ReadBounded: func(path string, _ int) ([]byte, error) {
+					if path != test.want {
+						t.Fatalf("read path = %q, want %q", path, test.want)
+					}
+					return nil, os.ErrNotExist
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.StartupFile != test.want || plan.Activation != `eval "$(intent-sh init `+test.shell+`)"` {
+				t.Fatalf("plan = %#v", plan)
+			}
+		})
+	}
+}
+
+func TestInspectDetectsOnlyRelevantUnsupportedBindings(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		shell   string
+		content string
+		want    []Conflict
+	}{
+		{ShellZsh, "# bindkey '^[g' ignored\nbindkey '^[g' custom-rewrite\nbindkey '^M' custom-enter\nbindkey '^[x' other\nbindkey '^[u' intent-sh-undo\n", []Conflict{{Key: "Alt+G"}, {Key: "Enter (CR)"}}},
+		{ShellBash, `bind '"\\eg": custom'` + "\n" + `bind -x '"\\C-j":other'` + "\n" + `bind -x '"\\eu":__intent_sh_undo'` + "\n", []Conflict{{Key: "Alt+G"}, {Key: "Enter (LF)"}}},
+	}
+	for _, test := range tests {
+		plan, err := Inspect(test.shell, Options{
+			Home: "/home/tester", GOOS: "linux",
+			Exists:      func(string) bool { return true },
+			ReadBounded: func(string, int) ([]byte, error) { return []byte(test.content), nil },
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(plan.Conflicts, test.want) {
+			t.Fatalf("%s conflicts = %#v, want %#v", test.shell, plan.Conflicts, test.want)
+		}
+	}
+}
+
+func TestInspectNeverWritesOrExecutesStartupFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".zshrc")
+	marker := filepath.Join(dir, "executed")
+	content := []byte("touch " + marker + "\nbindkey '^[g' custom\n")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Inspect(ShellZsh, Options{Home: dir, GOOS: "darwin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Conflicts) != 1 {
+		t.Fatalf("conflicts = %#v", plan.Conflicts)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, content) {
+		t.Fatal("startup file was modified")
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("startup content was executed: %v", err)
+	}
+}
+
+func TestInspectRejectsUnsupportedShellAndOversizeFile(t *testing.T) {
+	t.Parallel()
+	if _, err := Inspect("fish", Options{Home: "/tmp"}); err == nil {
+		t.Fatal("unsupported shell unexpectedly accepted")
+	}
+	_, err := Inspect(ShellZsh, Options{
+		Home:        "/tmp",
+		ReadBounded: func(string, int) ([]byte, error) { return nil, errors.New("too large") },
+	})
+	if err == nil {
+		t.Fatal("inspection error unexpectedly accepted")
+	}
+}
+
+func TestReadBoundedRegularFileRejectsFIFOWithoutBlocking(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".zshrc")
+	if err := syscall.Mkfifo(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if _, err := readBoundedRegularFile(path, maxStartupBytes); err == nil {
+		t.Fatal("FIFO startup path unexpectedly accepted")
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("FIFO startup path blocked inspection")
+	}
+}

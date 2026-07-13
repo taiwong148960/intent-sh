@@ -5,7 +5,7 @@ Shell users often know the operation they want but lose time recalling exact com
 ## What Changes
 
 - Add a single Go binary named `intent-sh` with rewrite, setup, configuration, and diagnostic entry points plus a versioned request/result contract for shell adapters.
-- Add Zsh ZLE and Bash Readline adapters for macOS and Linux that rewrite the full current buffer, regenerate from the preserved original intent, undo to that original, and cancel an in-flight provider process.
+- Add Zsh ZLE and Bash 4.0+ Readline adapters for macOS and Linux that rewrite the full current buffer, regenerate from the preserved original intent, undo to that original, and cancel an in-flight provider process. Stock macOS Bash 3.2 is explicitly incompatible because it does not expose the editable buffer to `bind -x`; stock Zsh remains supported.
 - Add Claude Code and Codex CLI providers that reuse official CLI authentication, run without model tools or session persistence, request structured output, and fall back according to local configuration.
 - Build requests from the current buffer and a deliberately small environment snapshot; support both Chinese and English intent without reading history, terminal output, environment values, project files, diffs, or credentials.
 - Validate every provider response locally as one bounded shell command, assign a local safe/review/dangerous classification, warn for risky commands, and require a second Enter before a dangerous generated command can run.
@@ -27,4 +27,4 @@ None.
 
 ## Impact
 
-This creates the initial Go module, internal packages, JSON schemas, Zsh and Bash adapter scripts, installer assets, tests, and user documentation in the `intent-sh` repository. Runtime dependencies are a supported shell plus at least one installed and authenticated official provider CLI (`claude` or `codex`); there is no hosted service, credential store, database, or direct model API dependency. Provider CLI flags and shell editing APIs form the main external compatibility boundaries.
+This creates the initial Go module, internal packages, JSON schemas, Zsh and Bash adapter scripts, installer assets, tests, and user documentation in the `intent-sh` repository. Runtime dependencies are supported Zsh or Bash 4.0+, plus at least one installed and authenticated official provider CLI (`claude` or `codex`); there is no hosted service, credential store, database, or direct model API dependency. Provider CLI flags and shell editing APIs form the main external compatibility boundaries.

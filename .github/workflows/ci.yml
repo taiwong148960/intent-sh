@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Zsh on Ubuntu
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes zsh
+
+      - name: Select modern Bash on Ubuntu
+        if: runner.os == 'Linux'
+        run: echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+
+      - name: Install and select modern Bash on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install bash
+          echo "INTENT_SH_TEST_BASH=$(brew --prefix)/bin/bash" >> "$GITHUB_ENV"
+
+      - name: Check formatting
+        run: make fmt-check
+
+      - name: Vet packages
+        run: make vet
+
+      - name: Check adapter syntax
+        run: make shell-check
+
+      - name: Run unit, fake-provider, and PTY suites
+        run: go test ./... -count=1
+
+      - name: Prove stock macOS Bash 3.2 rejects the adapter
+        if: runner.os == 'macOS'
+        run: |
+          /bin/bash --version
+          go test ./internal/shelltest -run '^TestBashBelowFourFailsBeforeBinding$' -count=1 -v
+
+      - name: Build amd64 and arm64 binaries
+        run: |
+          case "$RUNNER_OS" in
+            Linux) target_os=linux ;;
+            macOS) target_os=darwin ;;
+            *) exit 1 ;;
+          esac
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS="$target_os" GOARCH="$arch" \
+              go build -trimpath -o "$RUNNER_TEMP/intent-sh-$target_os-$arch" ./cmd/intent-sh
+          done
