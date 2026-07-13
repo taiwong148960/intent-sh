@@ -78,13 +78,13 @@ __intent_sh_rewrite() {
     local current=${READLINE_LINE-}
     local current_cursor=${READLINE_POINT-0}
     local request_original= request_previous=
-	local request_generation=0 pending_original=$current
-	local pending_original_cursor=$current_cursor
+    local request_generation=0 pending_original=$current
+    local pending_original_cursor=$current_cursor
 
-	# A prior ordinary acceptance maps the private continuation to accept-line.
-	# Reset it before every rewrite so it cannot bypass a new danger guard.
-	bind -x '"\C-^":__intent_sh_noop'
-	__intent_sh_armed_fingerprint=
+    # A prior ordinary acceptance maps the private continuation to accept-line.
+    # Reset it before every rewrite so it cannot bypass a new danger guard.
+    bind -x '"\C-^":__intent_sh_noop'
+    __intent_sh_armed_fingerprint=
     if [[ -n $__intent_sh_generated_command && $current == "$__intent_sh_generated_command" && -n $__intent_sh_original_buffer ]]; then
         request_original=$__intent_sh_original_buffer
         request_previous=$__intent_sh_generated_command
@@ -117,6 +117,9 @@ __intent_sh_rewrite() {
 
     local __intent_sh_interrupted=0
     local __intent_sh_provider_pid=
+    local __intent_sh_cancel_message_shown=0
+    local __intent_sh_previous_int_trap
+    __intent_sh_previous_int_trap=$(trap -p INT)
     local __intent_sh_tty_state=
     __intent_sh_tty_state=$(command stty -g < /dev/tty 2>/dev/null) || __intent_sh_tty_state=
     if [[ -n $__intent_sh_tty_state ]]; then
@@ -136,6 +139,7 @@ __intent_sh_rewrite() {
             "$request_id"
     } | command intent-sh adapter rewrite --protocol "$__intent_sh_protocol_version" > "$tmp" &
     __intent_sh_provider_pid=$!
+    trap '__intent_sh_interrupted=1; if [[ -n $__intent_sh_provider_pid ]]; then kill -INT "$__intent_sh_provider_pid" 2>/dev/null; fi; if ((!__intent_sh_cancel_message_shown)); then __intent_sh_cancel_message_shown=1; __intent_sh_message "cancelled"; fi' INT
     __intent_sh_message "generating... (Ctrl+C to cancel)"
     if [[ -n $__intent_sh_tty_state ]]; then
         while kill -0 "$__intent_sh_provider_pid" 2>/dev/null; do
@@ -148,15 +152,12 @@ __intent_sh_rewrite() {
         wait "$__intent_sh_provider_pid" || command_status=$?
         command stty "$__intent_sh_tty_state" < /dev/tty 2>/dev/null
     else
-        local __intent_sh_previous_int_trap
-        __intent_sh_previous_int_trap=$(trap -p INT)
-        trap '__intent_sh_interrupted=1; if [[ -n $__intent_sh_provider_pid ]]; then kill -INT "$__intent_sh_provider_pid" 2>/dev/null; fi' INT
         wait "$__intent_sh_provider_pid" || command_status=$?
-        if [[ -n $__intent_sh_previous_int_trap ]]; then
-            builtin eval "$__intent_sh_previous_int_trap"
-        else
-            trap - INT
-        fi
+    fi
+    if [[ -n $__intent_sh_previous_int_trap ]]; then
+        builtin eval "$__intent_sh_previous_int_trap"
+    else
+        trap - INT
     fi
 
     if ! __intent_sh_read_response "$tmp"; then
@@ -165,7 +166,9 @@ __intent_sh_rewrite() {
         READLINE_LINE=$current
         READLINE_POINT=$current_cursor
         if ((__intent_sh_interrupted)); then
-            __intent_sh_message "cancelled"
+            if ((!__intent_sh_cancel_message_shown)); then
+                __intent_sh_message "cancelled"
+            fi
         else
             __intent_sh_message "received a malformed adapter response"
         fi
@@ -205,10 +208,10 @@ __intent_sh_rewrite() {
             __intent_sh_provider=$__intent_sh_response_provider
             __intent_sh_risk=$__intent_sh_response_risk
             __intent_sh_risk_reason=$__intent_sh_response_risk_reason
-			__intent_sh_request_id=$request_id
-			__intent_sh_generation_index=$request_generation
-			__intent_sh_armed_fingerprint=
-			bind -x '"\C-^":__intent_sh_noop'
+            __intent_sh_request_id=$request_id
+            __intent_sh_generation_index=$request_generation
+            __intent_sh_armed_fingerprint=
+            bind -x '"\C-^":__intent_sh_noop'
             if [[ $__intent_sh_risk == dangerous ]]; then
                 __intent_sh_message "DANGEROUS: ${__intent_sh_risk_reason:-review carefully}; first Enter warns, second unchanged Enter executes"
             elif [[ $__intent_sh_risk == review ]]; then
@@ -227,7 +230,9 @@ __intent_sh_rewrite() {
         cancelled)
             READLINE_LINE=$current
             READLINE_POINT=$current_cursor
-            __intent_sh_message "cancelled"
+            if ((!__intent_sh_cancel_message_shown)); then
+                __intent_sh_message "cancelled"
+            fi
             ;;
         error)
             READLINE_LINE=$current

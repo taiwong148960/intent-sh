@@ -297,8 +297,29 @@ func TestMVPRewriteWorkflowInPTY(t *testing.T) {
 			shell.readUntil(t, "Ctrl+C to cancel")
 			shell.writeBytes(t, []byte{'\x03'})
 			shell.readUntil(t, "cancelled")
+			if tc.name == "bash" {
+				shell.readUntil(t, promptMarker)
+			}
 			assertShellState(t, shell, original, len(original), "", 0, "")
 		})
+
+		if tc.name == "bash" {
+			t.Run(tc.name+"/signal-cancellation", func(t *testing.T) {
+				requireCompatibleShell(t, tc)
+				shell, _ := startMVPShell(t, tc, binDir, 10)
+				defer shell.close(t)
+				original := "INTENT_CASE_SLOW_7Q"
+				shell.write(t, original)
+				shell.writeBytes(t, []byte{'\x1b', 'g'})
+				shell.readUntil(t, "Ctrl+C to cancel")
+				if err := shell.cmd.Process.Signal(os.Interrupt); err != nil {
+					t.Fatalf("signal Bash during rewrite: %v", err)
+				}
+				shell.readUntil(t, "cancelled")
+				shell.readUntil(t, promptMarker)
+				assertShellState(t, shell, original, len(original), "", 0, "")
+			})
+		}
 	}
 
 	for _, tc := range cases {
@@ -346,6 +367,9 @@ func TestMVPRewriteWorkflowInPTY(t *testing.T) {
 			shell.readUntil(t, "Ctrl+C to cancel")
 			shell.writeBytes(t, []byte{'\x03'})
 			shell.readUntil(t, "cancelled")
+			if tc.name == "bash" {
+				shell.readUntil(t, promptMarker)
+			}
 			assertShellState(t, shell, original, len(original), "", 0, "")
 		})
 

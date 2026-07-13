@@ -31,6 +31,7 @@ This review covers the source-installable MVP described by the `build-intent-sh-
 | TR-08 | `/tmp/ls` inherited the `ls` safe rule even though the explicit path could name arbitrary code. | Explicit executable paths are at least review, including commands embedded in `find -exec`. |
 | TR-09 | Eight or more supported wrappers could hide a destructive inner command. | Normalize supported wrappers until no wrapper remains; a 32-layer regression must still find recursive deletion. |
 | TR-10 | `env -S` can turn one opaque string into a hidden command. | Treat split-string forms as dangerous shell evaluation, including attached long-option syntax. |
+| TR-11 | Hosted PTYs can deliver Ctrl+C to Bash as `SIGINT` even when the adapter also supports raw control-byte cancellation. | Install and restore a scoped interrupt trap around the provider wait, handle both delivery modes, and cover direct process-signal cancellation in the Bash PTY suite. |
 
 ## Residual limits
 
