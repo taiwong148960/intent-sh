@@ -40,3 +40,5 @@ The same source built successfully with `CGO_ENABLED=0` for:
 - `linux/arm64`
 
 The repository CI repeats the full suite on hosted Ubuntu and macOS runners and cross-builds amd64 and arm64 artifacts for each runner OS. Real-provider compatibility is recorded separately in [provider-compatibility.md](provider-compatibility.md), and the security pass is recorded in [threat-review.md](threat-review.md).
+
+[GitHub Actions CI run 29243129560](https://github.com/taiwong148960/intent-sh/actions/runs/29243129560) passed on both hosted Ubuntu and macOS. It covered the full fake-provider/PTY suite with modern Bash and Zsh, explicit stock macOS Bash 3.2 rejection, and Linux/Darwin amd64/arm64 builds.

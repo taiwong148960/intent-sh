@@ -9,7 +9,7 @@
 ## 2. Shell Confirmation Feasibility Spikes
 
 - [x] 2.1 Prototype the Bash 4.0+ Readline guard-macro/private-continuation technique without model integration and prove that an unchanged test-danger command is blocked on first Enter and accepted through native Readline on second Enter.
-- [ ] 2.2 Add PTY coverage for the Bash confirmation prototype on modern macOS and Linux Bash, including edit-to-disarm and ordinary-command acceptance, plus a compatibility test proving Bash 3.2 fails before installing bindings.
+- [x] 2.2 Add PTY coverage for the Bash confirmation prototype on modern macOS and Linux Bash, including edit-to-disarm and ordinary-command acceptance, plus a compatibility test proving Bash 3.2 fails before installing bindings.
 - [x] 2.3 Prototype the Zsh wrapped `accept-line` widget and add PTY coverage for first-Enter blocking, second-Enter native acceptance, and edit-to-disarm.
 
 ## 3. Configuration, Context, and Prompting
