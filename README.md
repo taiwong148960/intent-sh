@@ -213,3 +213,7 @@ make check
 On macOS, point `INTENT_SH_TEST_BASH` at a separately installed Bash 4.0+ to run the modern-Bash PTY matrix. The suite still verifies that `/bin/bash` 3.2 is rejected before bindings are installed.
 
 Real provider checks are deliberately opt-in; see the [provider compatibility record](docs/provider-compatibility.md).
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE) (`Apache-2.0`).
