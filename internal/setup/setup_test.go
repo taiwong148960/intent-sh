@@ -57,8 +57,8 @@ func TestInspectDetectsOnlyRelevantUnsupportedBindings(t *testing.T) {
 		content string
 		want    []Conflict
 	}{
-		{ShellZsh, "# bindkey '^[g' ignored\nbindkey '^[g' custom-rewrite\nbindkey '^M' custom-enter\nbindkey '^[x' other\nbindkey '^[u' intent-sh-undo\n", []Conflict{{Key: "Alt+G"}, {Key: "Enter (CR)"}}},
-		{ShellBash, `bind '"\\eg": custom'` + "\n" + `bind -x '"\\C-j":other'` + "\n" + `bind -x '"\\eu":__intent_sh_undo'` + "\n", []Conflict{{Key: "Alt+G"}, {Key: "Enter (LF)"}}},
+		{ShellZsh, "# bindkey '^[g' ignored\nbindkey '^[g' custom-rewrite\nbindkey '^M' custom-enter\nbindkey '^[x' other\nbindkey '^[u' intent-sh-undo\n", []Conflict{{Backend: ConflictBackendNative, Key: "Alt+G"}, {Backend: ConflictBackendNative, Key: "Enter (CR)"}}},
+		{ShellBash, `bind '"\\eg": custom'` + "\n" + `bind -x '"\\C-j":other'` + "\n" + `bind -x '"\\eu":__intent_sh_undo'` + "\n", []Conflict{{Backend: ConflictBackendNative, Key: "Alt+G"}, {Backend: ConflictBackendNative, Key: "Enter (LF)"}}},
 	}
 	for _, test := range tests {
 		plan, err := Inspect(test.shell, Options{
@@ -72,6 +72,59 @@ func TestInspectDetectsOnlyRelevantUnsupportedBindings(t *testing.T) {
 		if !reflect.DeepEqual(plan.Conflicts, test.want) {
 			t.Fatalf("%s conflicts = %#v, want %#v", test.shell, plan.Conflicts, test.want)
 		}
+	}
+}
+
+func TestInspectBashReportsBleshContractConflictsAndLoadOrder(t *testing.T) {
+	t.Parallel()
+	content := `eval "$(intent-sh init bash)"
+source "$HOME/.local/share/blesh/ble.sh"
+ble-bind -x M-g custom-rewrite
+ble-bind -x 'M-u' custom-undo
+ble/function#advice around ble/widget/default/accept-line 'custom-advice'
+`
+	plan, err := Inspect(ShellBash, Options{
+		Home:        "/home/tester",
+		GOOS:        "darwin",
+		Exists:      func(string) bool { return true },
+		ReadBounded: func(string, int) ([]byte, error) { return []byte(content), nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantConflicts := []Conflict{
+		{Backend: ConflictBackendBlesh, Key: "Alt+G"},
+		{Backend: ConflictBackendBlesh, Key: "Alt+U"},
+		{Backend: ConflictBackendBlesh, Key: "accept-line"},
+	}
+	if !reflect.DeepEqual(plan.Conflicts, wantConflicts) {
+		t.Fatalf("conflicts = %#v, want %#v", plan.Conflicts, wantConflicts)
+	}
+	if !plan.BleshLoadOrderConflict {
+		t.Fatal("intent-sh-before-ble.sh load order was not detected")
+	}
+	if plan.BleshVersion == "" || plan.BleshCommit != BleshCommit || plan.BleshInstallURL != BleshInstallURL {
+		t.Fatalf("ble.sh guidance = %#v", plan)
+	}
+}
+
+func TestInspectBashAcceptsBleshBeforeIntentActivation(t *testing.T) {
+	t.Parallel()
+	content := `source "$HOME/.local/share/blesh/ble.sh"
+ble-attach
+eval "$(intent-sh init bash)"
+`
+	plan, err := Inspect(ShellBash, Options{
+		Home:        "/home/tester",
+		GOOS:        "linux",
+		Exists:      func(string) bool { return true },
+		ReadBounded: func(string, int) ([]byte, error) { return []byte(content), nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.BleshLoadOrderConflict {
+		t.Fatal("correct ble.sh load order was reported as conflicting")
 	}
 }
 

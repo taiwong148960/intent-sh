@@ -7,14 +7,22 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/taiwong148960/intent-sh/internal/apperr"
 )
 
 const (
-	AdapterVersion = "1"
+	AdapterVersion = "2"
 	MaxFieldBytes  = 32 * 1024
 	MaxFrameBytes  = 128 * 1024
+)
+
+const (
+	EditorBackendZLE      = "zle"
+	EditorBackendReadline = "readline"
+	EditorBackendBlesh    = "blesh"
+	BleshVersion          = "0.4.0-nightly+d69e4d5"
 )
 
 const (
@@ -31,6 +39,8 @@ type AdapterRequest struct {
 	Action          string `json:"action"`
 	Shell           string `json:"shell"`
 	ShellVersion    string `json:"shellVersion"`
+	EditorBackend   string `json:"editorBackend"`
+	EditorVersion   string `json:"editorVersion"`
 	Buffer          string `json:"buffer"`
 	Cursor          int    `json:"cursor"`
 	Original        string `json:"original,omitempty"`
@@ -57,6 +67,8 @@ func EncodeRequest(w io.Writer, req AdapterRequest) error {
 		req.Action,
 		req.Shell,
 		req.ShellVersion,
+		req.EditorBackend,
+		req.EditorVersion,
 		req.Buffer,
 		strconv.Itoa(req.Cursor),
 		req.Original,
@@ -67,18 +79,18 @@ func EncodeRequest(w io.Writer, req AdapterRequest) error {
 }
 
 func DecodeRequest(r io.Reader) (AdapterRequest, error) {
-	fields, err := readFields(r, 10)
+	fields, err := readFields(r, 12)
 	if err != nil {
 		return AdapterRequest{}, err
 	}
 	if fields[0] != AdapterVersion {
 		return AdapterRequest{}, apperr.New(apperr.KindProtocol, "decode adapter request", "adapter protocol is incompatible with binary protocol "+AdapterVersion)
 	}
-	cursor, err := parseNonNegative(fields[5], "cursor")
+	cursor, err := parseNonNegative(fields[7], "cursor")
 	if err != nil {
 		return AdapterRequest{}, err
 	}
-	generation, err := parseNonNegative(fields[8], "generation index")
+	generation, err := parseNonNegative(fields[10], "generation index")
 	if err != nil {
 		return AdapterRequest{}, err
 	}
@@ -87,13 +99,53 @@ func DecodeRequest(r io.Reader) (AdapterRequest, error) {
 		Action:          fields[1],
 		Shell:           fields[2],
 		ShellVersion:    fields[3],
-		Buffer:          fields[4],
+		EditorBackend:   fields[4],
+		EditorVersion:   fields[5],
+		Buffer:          fields[6],
 		Cursor:          cursor,
-		Original:        fields[6],
-		Previous:        fields[7],
+		Original:        fields[8],
+		Previous:        fields[9],
 		GenerationIndex: generation,
-		RequestID:       fields[9],
+		RequestID:       fields[11],
 	}, nil
+}
+
+// ValidateUTF8ByteCursor verifies that cursor is a byte offset on a UTF-8
+// boundary. Protocol 2 uses byte offsets even when an editor stores a logical
+// character index locally.
+func ValidateUTF8ByteCursor(buffer string, cursor int) error {
+	if !utf8.ValidString(buffer) {
+		return apperr.New(apperr.KindInvalidInput, "validate adapter cursor", "editable buffer must be valid UTF-8")
+	}
+	if cursor < 0 || cursor > len(buffer) {
+		return apperr.New(apperr.KindInvalidInput, "validate adapter cursor", "cursor is outside the editable buffer")
+	}
+	if cursor < len(buffer) && !utf8.RuneStart(buffer[cursor]) {
+		return apperr.New(apperr.KindInvalidInput, "validate adapter cursor", "cursor must be on a UTF-8 byte boundary")
+	}
+	return nil
+}
+
+// UTF8ByteOffset converts a zero-based Unicode code-point index into the byte
+// offset used by protocol 2. Combining marks remain separate code points.
+func UTF8ByteOffset(buffer string, characterOffset int) (int, error) {
+	if !utf8.ValidString(buffer) {
+		return 0, apperr.New(apperr.KindInvalidInput, "convert adapter cursor", "editable buffer must be valid UTF-8")
+	}
+	if characterOffset < 0 {
+		return 0, apperr.New(apperr.KindInvalidInput, "convert adapter cursor", "character cursor must be non-negative")
+	}
+	index := 0
+	for byteOffset := range buffer {
+		if index == characterOffset {
+			return byteOffset, nil
+		}
+		index++
+	}
+	if index == characterOffset {
+		return len(buffer), nil
+	}
+	return 0, apperr.New(apperr.KindInvalidInput, "convert adapter cursor", "character cursor is outside the editable buffer")
 }
 
 func EncodeResponse(w io.Writer, response AdapterResponse) error {

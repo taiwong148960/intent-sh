@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/taiwong148960/intent-sh/internal/apperr"
 	"github.com/taiwong148960/intent-sh/internal/config"
@@ -143,17 +144,26 @@ func ValidateRequest(request protocol.AdapterRequest) error {
 	if request.Shell != safety.ShellBash && request.Shell != safety.ShellZsh {
 		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "supported shells are bash and zsh")
 	}
-	if request.ShellVersion == "" || len(request.ShellVersion) > 64 || strings.ContainsAny(request.ShellVersion, "\x00\r\n") {
+	if !shortSingleLine(request.ShellVersion, 64) {
 		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "shell version must be a short single-line value")
 	}
-	if request.Shell == safety.ShellBash && bashMajor(request.ShellVersion) < 4 {
-		return apperr.New(apperr.KindProtocol, "validate adapter request", "Bash 4.0 or newer is required; use Zsh or install a modern Bash")
+	if !shortSingleLine(request.EditorBackend, 16) {
+		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "editor backend must be a short single-line value")
+	}
+	if !shortSingleLine(request.EditorVersion, 64) {
+		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "editor version must be a short single-line value")
+	}
+	if err := validateEditor(request); err != nil {
+		return err
 	}
 	if strings.TrimSpace(request.Buffer) == "" {
 		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "enter a command or intent before requesting a rewrite")
 	}
-	if request.Cursor < 0 || request.Cursor > len(request.Buffer) {
-		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "cursor is outside the editable buffer")
+	if err := protocol.ValidateUTF8ByteCursor(request.Buffer, request.Cursor); err != nil {
+		return err
+	}
+	if !utf8.ValidString(request.Original) || !utf8.ValidString(request.Previous) {
+		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "regeneration fields must be valid UTF-8")
 	}
 	if request.RequestID == "" || len(request.RequestID) > 128 || strings.ContainsAny(request.RequestID, "\x00\r\n") {
 		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "request ID must be a short single-line value")
@@ -167,13 +177,66 @@ func ValidateRequest(request protocol.AdapterRequest) error {
 	return nil
 }
 
-func bashMajor(version string) int {
-	prefix := version
-	if index := strings.IndexByte(prefix, '.'); index >= 0 {
-		prefix = prefix[:index]
+func validateEditor(request protocol.AdapterRequest) error {
+	switch request.Shell {
+	case safety.ShellZsh:
+		if request.EditorBackend != protocol.EditorBackendZLE || request.EditorVersion != request.ShellVersion {
+			return apperr.New(apperr.KindProtocol, "validate adapter request", "Zsh requires a matching zle editor backend")
+		}
+		return nil
+	case safety.ShellBash:
+		major, minor, ok := shellMajorMinor(request.ShellVersion)
+		if !ok {
+			return apperr.New(apperr.KindInvalidInput, "validate adapter request", "Bash version must start with a numeric major and minor version")
+		}
+		switch request.EditorBackend {
+		case protocol.EditorBackendReadline:
+			if major < 4 || request.EditorVersion != request.ShellVersion {
+				return apperr.New(apperr.KindProtocol, "validate adapter request", "native Readline requires Bash 4.0 or newer with a matching editor version")
+			}
+			return nil
+		case protocol.EditorBackendBlesh:
+			if major < 3 || major == 3 && minor < 2 {
+				return apperr.New(apperr.KindProtocol, "validate adapter request", "the ble.sh backend requires Bash 3.2 or newer")
+			}
+			if request.EditorVersion != protocol.BleshVersion {
+				return apperr.New(apperr.KindProtocol, "validate adapter request", "ble.sh is incompatible; load the exact tested version before reinitializing intent-sh")
+			}
+			return nil
+		default:
+			return apperr.New(apperr.KindProtocol, "validate adapter request", "Bash editor backend must be readline or blesh")
+		}
+	default:
+		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "supported shells are bash and zsh")
 	}
-	major, _ := strconv.Atoi(prefix)
-	return major
+}
+
+func shortSingleLine(value string, limit int) bool {
+	return value != "" && len(value) <= limit && !strings.ContainsAny(value, "\x00\r\n")
+}
+
+func shellMajorMinor(version string) (int, int, bool) {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil || major < 0 {
+		return 0, 0, false
+	}
+	minorText := parts[1]
+	end := 0
+	for end < len(minorText) && minorText[end] >= '0' && minorText[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0, 0, false
+	}
+	minor, err := strconv.Atoi(minorText[:end])
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
 }
 
 // HandleRewrite decodes and fully buffers one adapter response before writing.

@@ -1,6 +1,7 @@
 package shelltest
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -95,7 +96,7 @@ func TestEditingDisarmsDangerousFingerprint(t *testing.T) {
 	}
 }
 
-func TestBashBelowFourFailsBeforeBinding(t *testing.T) {
+func TestBash32WithoutBleshFailsBeforeBinding(t *testing.T) {
 	path, err := exec.LookPath("/bin/bash")
 	if err != nil {
 		t.Skip("system Bash is not available")
@@ -104,14 +105,15 @@ func TestBashBelowFourFailsBeforeBinding(t *testing.T) {
 		t.Skipf("system Bash is %d, not an incompatible version", major)
 	}
 	script := filepath.Join(repositoryRoot(t), "shell", "bash", "intent-sh.bash")
-	command := fmt.Sprintf("source %s; status=$?; bind -s; printf 'STATUS:%%s\\n' \"$status\"", shellQuote(script))
+	command := fmt.Sprintf("source %s; status=$?; bind -s; printf 'STATUS:%%s BACKEND:%%s READY:%%s FAILURE:%%s\\n' \"$status\" \"$INTENT_SH_ADAPTER_BACKEND\" \"$INTENT_SH_ADAPTER_READY\" \"$INTENT_SH_ADAPTER_FAILURE\"", shellQuote(script))
 	cmd := exec.Command(path, "--noprofile", "--norc", "-ic", command)
 	output, runErr := cmd.CombinedOutput()
 	if runErr != nil {
 		t.Fatalf("run incompatible Bash probe: %v: %s", runErr, output)
 	}
 	text := string(output)
-	if !strings.Contains(text, "Bash 4.0 or newer is required") || !strings.Contains(text, "STATUS:1") {
+	if !strings.Contains(text, "Bash 3.2 requires the tested ble.sh loaded first") ||
+		!strings.Contains(text, "STATUS:1 BACKEND:none READY:0 FAILURE:missing_blesh") {
 		t.Fatalf("incompatible Bash did not fail clearly: %q", text)
 	}
 	if strings.Contains(text, `"\C-m":"\C-]\C-^"`) {
@@ -120,12 +122,13 @@ func TestBashBelowFourFailsBeforeBinding(t *testing.T) {
 }
 
 type runningShell struct {
-	cmd     *exec.Cmd
-	file    *os.File
-	chunks  chan []byte
-	readErr chan error
-	pending string
-	name    string
+	cmd                    *exec.Cmd
+	file                   *os.File
+	chunks                 chan []byte
+	readErr                chan error
+	pending                string
+	name                   string
+	respondTerminalQueries bool
 }
 
 func startShell(t *testing.T, tc shellCase) *runningShell {
@@ -133,6 +136,24 @@ func startShell(t *testing.T, tc shellCase) *runningShell {
 }
 
 func startShellWith(t *testing.T, tc shellCase, extraEnv map[string]string, initialize string) *runningShell {
+	return startShellWithOptions(t, tc, extraEnv, initialize, false)
+}
+
+func startShellWithTerminalResponses(t *testing.T, tc shellCase, extraEnv map[string]string, initialize string) *runningShell {
+	return startShellWithOptions(t, tc, extraEnv, initialize, true)
+}
+
+func startBashWithRCAndTerminalResponses(t *testing.T, tc shellCase, extraEnv map[string]string, bashrc string) *runningShell {
+	t.Helper()
+	rcPath := filepath.Join(t.TempDir(), "bashrc")
+	if err := os.WriteFile(rcPath, []byte(bashrc+"\n"), 0o600); err != nil {
+		t.Fatalf("write Bash test rcfile: %v", err)
+	}
+	tc.args = []string{"--noprofile", "--rcfile", rcPath, "-i"}
+	return startShellWithOptions(t, tc, extraEnv, "", true)
+}
+
+func startShellWithOptions(t *testing.T, tc shellCase, extraEnv map[string]string, initialize string, respondTerminalQueries bool) *runningShell {
 	t.Helper()
 	path, err := exec.LookPath(tc.executable)
 	if err != nil {
@@ -149,12 +170,14 @@ func startShellWith(t *testing.T, tc shellCase, extraEnv map[string]string, init
 		t.Fatalf("start %s: %v", tc.name, err)
 	}
 	_ = pty.Setsize(file, &pty.Winsize{Rows: 40, Cols: 240})
-	shell := &runningShell{cmd: cmd, file: file, chunks: make(chan []byte, 32), readErr: make(chan error, 1), name: tc.name}
+	shell := &runningShell{cmd: cmd, file: file, chunks: make(chan []byte, 32), readErr: make(chan error, 1), name: tc.name, respondTerminalQueries: respondTerminalQueries}
 	go shell.readLoop()
 	shell.readUntil(t, promptMarker)
-	shell.write(t, initialize)
-	shell.writeBytes(t, []byte{'\r'})
-	shell.readUntil(t, promptMarker)
+	if initialize != "" {
+		shell.write(t, initialize)
+		shell.writeBytes(t, []byte{'\r'})
+		shell.readUntil(t, promptMarker)
+	}
 	return shell
 }
 
@@ -196,8 +219,12 @@ func (s *runningShell) writeBytes(t *testing.T, value []byte) {
 }
 
 func (s *runningShell) readUntil(t *testing.T, needle string) string {
+	return s.readUntilTimeout(t, needle, 5*time.Second)
+}
+
+func (s *runningShell) readUntilTimeout(t *testing.T, needle string, timeout time.Duration) string {
 	t.Helper()
-	timer := time.NewTimer(5 * time.Second)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
 		if index := strings.Index(s.pending, needle); index >= 0 {
@@ -222,10 +249,42 @@ func (s *runningShell) readUntil(t *testing.T, needle string) string {
 
 func (s *runningShell) readLoop() {
 	buffer := make([]byte, 1024)
+	var terminalQueryTail []byte
+	cprCount := 0
 	for {
 		n, err := s.file.Read(buffer)
 		if n > 0 {
 			chunk := append([]byte(nil), buffer[:n]...)
+			if s.respondTerminalQueries {
+				scan := append(append([]byte(nil), terminalQueryTail...), chunk...)
+				for _, query := range []struct {
+					request  []byte
+					response []byte
+				}{
+					{[]byte("\x1b[>c"), []byte("\x1b[>0;95;0c")},
+					{[]byte("\x1b[c"), []byte("\x1b[?1;2c")},
+				} {
+					for range bytes.Count(scan, query.request) {
+						_, _ = s.file.Write(query.response)
+					}
+				}
+				for range bytes.Count(scan, []byte("\x1b[6n")) {
+					cprCount++
+					response := []byte("\x1b[1;1R")
+					if cprCount == 1 {
+						response = []byte("\x1b[2;1R")
+					} else if cprCount == 2 {
+						response = []byte("\x1b[3;1R")
+					}
+					_, _ = s.file.Write(response)
+				}
+				const queryPrefixLimit = 3
+				if len(scan) > queryPrefixLimit {
+					terminalQueryTail = append(terminalQueryTail[:0], scan[len(scan)-queryPrefixLimit:]...)
+				} else {
+					terminalQueryTail = append(terminalQueryTail[:0], scan...)
+				}
+			}
 			s.chunks <- chunk
 		}
 		if err != nil {

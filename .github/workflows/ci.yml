@@ -58,11 +58,13 @@ jobs:
       - name: Run unit, fake-provider, and PTY suites
         run: go test ./... -count=1
 
-      - name: Prove stock macOS Bash 3.2 rejects the adapter
+      - name: Prove stock macOS Bash 3.2 fails closed without ble.sh
         if: runner.os == 'macOS'
         run: |
           /bin/bash --version
-          go test ./internal/shelltest -run '^TestBashBelowFourFailsBeforeBinding$' -count=1 -v
+          INTENT_SH_TEST_BASH32=/bin/bash go test ./internal/shelltest \
+            -run '^(TestBash32WithoutBleshFailsBeforeBinding|TestBash32MissingBleshIsInertInPTY)$' \
+            -count=1 -v
 
       - name: Build amd64 and arm64 binaries
         run: |
@@ -75,3 +77,60 @@ jobs:
             CGO_ENABLED=0 GOOS="$target_os" GOARCH="$arch" \
               go build -trimpath -o "$RUNNER_TEMP/intent-sh-$target_os-$arch" ./cmd/intent-sh
           done
+
+  blesh:
+    name: pinned ble.sh / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install ble.sh build dependencies on Ubuntu
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes gawk zsh
+
+      - name: Install modern Bash and GNU awk on macOS
+        if: runner.os == 'macOS'
+        run: brew install bash gawk
+
+      - name: Select Bash test executables
+        run: |
+          if [[ $RUNNER_OS == macOS ]]; then
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix)/bin/bash" >> "$GITHUB_ENV"
+            echo "INTENT_SH_TEST_BASH32=/bin/bash" >> "$GITHUB_ENV"
+          else
+            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          fi
+
+      - name: Restore pinned ble.sh test artifact
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/intent-sh-blesh
+          key: blesh-${{ runner.os }}-d69e4d549a1881a37300fe6b4a05478bd9157dfc-${{ hashFiles('.github/scripts/install-blesh-test.sh') }}
+
+      - name: Verify, build, and select pinned ble.sh
+        env:
+          INTENT_SH_TEST_BLESH_CACHE: ${{ runner.temp }}/intent-sh-blesh
+        run: bash .github/scripts/install-blesh-test.sh
+
+      - name: Run stock macOS Bash 3.2 ble.sh matrix
+        if: runner.os == 'macOS'
+        run: go test ./internal/shelltest -run '^(TestBlesh|TestBash32)' -count=1 -v
+
+      - name: Run modern Bash native and ble.sh matrix
+        run: |
+          go test ./internal/shelltest \
+            -run '^(TestModernBashNativeAndBleshAcceptanceContract|TestNativeEditorsUnicodeCursorRoundTripInPTY/bash)$' \
+            -count=1 -v

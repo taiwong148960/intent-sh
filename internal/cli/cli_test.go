@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/taiwong148960/intent-sh/internal/protocol"
 	"github.com/taiwong148960/intent-sh/internal/provider"
 	"github.com/taiwong148960/intent-sh/internal/safety"
+	setupguide "github.com/taiwong148960/intent-sh/internal/setup"
 )
 
 type cliRouter struct {
@@ -103,6 +105,7 @@ func TestAdapterRewriteCommandReturnsFramedSuccess(t *testing.T) {
 	)
 	request := protocol.AdapterRequest{
 		Version: protocol.AdapterVersion, Action: protocol.ActionRewrite, Shell: "zsh", ShellVersion: "5.9",
+		EditorBackend: protocol.EditorBackendZLE, EditorVersion: "5.9",
 		Buffer: "where am I", Cursor: len("where am I"), RequestID: "cli-request",
 	}
 	var stdin, stdout, stderr bytes.Buffer
@@ -139,6 +142,7 @@ func TestAdapterRewriteCommandFramesFailures(t *testing.T) {
 		service := cliService(cliRouter{err: apperr.New(apperr.KindCancelled, "fake", "cancelled")}, cliSafety{})
 		request := protocol.AdapterRequest{
 			Version: protocol.AdapterVersion, Action: protocol.ActionRewrite, Shell: "zsh", ShellVersion: "5.9",
+			EditorBackend: protocol.EditorBackendZLE, EditorVersion: "5.9",
 			Buffer: "intent", Cursor: 6, RequestID: "cancel-request",
 		}
 		var stdin, stdout, stderr bytes.Buffer
@@ -207,6 +211,40 @@ func TestSetupPrintsReversibleGuidanceWithoutWriting(t *testing.T) {
 	}
 	if _, err := config.LoadAt(filepath.Join(home, ".zshrc")); err != nil {
 		t.Fatalf("setup unexpectedly affected startup path: %v", err)
+	}
+}
+
+func TestBashSetupExplainsOptionalBleshWithoutInstallingIt(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	var stdout, stderr bytes.Buffer
+	exit := Run([]string{"setup", "bash"}, strings.NewReader(""), &stdout, &stderr)
+	if exit != apperr.ExitOK || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stderr=%q", exit, stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"Optional Bash 3.2 compatibility",
+		protocol.BleshVersion,
+		setupguide.BleshCommit,
+		setupguide.BleshInstallURL,
+		"Load and attach ble.sh before this activation line",
+		"Bash 4.0+",
+		"stock Zsh",
+		"ble-bind M-g/M-u",
+		"does not remove the independently managed ble.sh",
+		"No startup file was modified",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("Bash setup omitted %q:\n%s", want, output)
+		}
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("Bash setup changed HOME: %#v", entries)
 	}
 }
 

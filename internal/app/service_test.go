@@ -104,6 +104,9 @@ func TestRewriteOrchestratesSuccessfulCommand(t *testing.T) {
 	if router.request.Model != cfg.Model || router.request.Timeout != 17*time.Second || !strings.Contains(router.request.Prompt, `"buffer":"find TODOs"`) {
 		t.Fatalf("provider request = %#v", router.request)
 	}
+	if strings.Contains(router.request.Prompt, "editorBackend") || strings.Contains(router.request.Prompt, protocol.BleshVersion) {
+		t.Fatalf("editor compatibility metadata reached the model prompt: %q", router.request.Prompt)
+	}
 	if !strings.Contains(router.request.Prompt, `"availableTools":["rg"]`) || contextBuilder.gotCWD != "/work" {
 		t.Fatalf("context was not included correctly: prompt=%q context=%#v", router.request.Prompt, contextBuilder)
 	}
@@ -142,9 +145,30 @@ func TestValidateRequestFailures(t *testing.T) {
 		{"action", func(r *protocol.AdapterRequest) { r.Action = "execute" }, apperr.KindInvalidInput},
 		{"shell", func(r *protocol.AdapterRequest) { r.Shell = "fish" }, apperr.KindInvalidInput},
 		{"shell version", func(r *protocol.AdapterRequest) { r.ShellVersion = "" }, apperr.KindInvalidInput},
-		{"old bash", func(r *protocol.AdapterRequest) { r.Shell, r.ShellVersion = "bash", "3.2.57" }, apperr.KindProtocol},
+		{"missing backend", func(r *protocol.AdapterRequest) { r.EditorBackend = "" }, apperr.KindInvalidInput},
+		{"missing editor version", func(r *protocol.AdapterRequest) { r.EditorVersion = "" }, apperr.KindInvalidInput},
+		{"zsh wrong backend", func(r *protocol.AdapterRequest) { r.EditorBackend = protocol.EditorBackendReadline }, apperr.KindProtocol},
+		{"zsh mismatched editor version", func(r *protocol.AdapterRequest) { r.EditorVersion = "5.8" }, apperr.KindProtocol},
+		{"old native bash", func(r *protocol.AdapterRequest) {
+			r.Shell, r.ShellVersion = "bash", "3.2.57(1)-release"
+			r.EditorBackend, r.EditorVersion = protocol.EditorBackendReadline, "3.2.57(1)-release"
+		}, apperr.KindProtocol},
+		{"blesh on bash 3.1", func(r *protocol.AdapterRequest) {
+			r.Shell, r.ShellVersion = "bash", "3.1.23(1)-release"
+			r.EditorBackend, r.EditorVersion = protocol.EditorBackendBlesh, protocol.BleshVersion
+		}, apperr.KindProtocol},
+		{"unverified blesh", func(r *protocol.AdapterRequest) {
+			r.Shell, r.ShellVersion = "bash", "3.2.57(1)-release"
+			r.EditorBackend, r.EditorVersion = protocol.EditorBackendBlesh, "0.4.0-devel3"
+		}, apperr.KindProtocol},
+		{"unknown bash backend", func(r *protocol.AdapterRequest) {
+			r.Shell, r.ShellVersion = "bash", "5.2.37(1)-release"
+			r.EditorBackend, r.EditorVersion = "other", "1"
+		}, apperr.KindProtocol},
 		{"empty input", func(r *protocol.AdapterRequest) { r.Buffer, r.Cursor = "  ", 0 }, apperr.KindInvalidInput},
 		{"cursor", func(r *protocol.AdapterRequest) { r.Cursor = len(r.Buffer) + 1 }, apperr.KindInvalidInput},
+		{"cursor UTF-8 boundary", func(r *protocol.AdapterRequest) { r.Buffer, r.Cursor = "a中b", 2 }, apperr.KindInvalidInput},
+		{"invalid UTF-8", func(r *protocol.AdapterRequest) { r.Buffer, r.Cursor = string([]byte{'a', 0xff}), 1 }, apperr.KindInvalidInput},
 		{"request ID", func(r *protocol.AdapterRequest) { r.RequestID = "" }, apperr.KindInvalidInput},
 		{"regeneration original", func(r *protocol.AdapterRequest) { r.GenerationIndex, r.Original, r.Previous = 1, "", "pwd" }, apperr.KindInvalidInput},
 		{"regeneration previous", func(r *protocol.AdapterRequest) { r.GenerationIndex, r.Original, r.Previous = 1, "intent", "" }, apperr.KindInvalidInput},
@@ -159,6 +183,52 @@ func TestValidateRequestFailures(t *testing.T) {
 				t.Fatalf("kind = %q, want %q; err=%v", got, test.kind, err)
 			}
 		})
+	}
+}
+
+func TestValidateRequestAcceptsCoherentEditorBackends(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		mutate func(*protocol.AdapterRequest)
+	}{
+		{name: "zle", mutate: func(*protocol.AdapterRequest) {}},
+		{name: "native readline", mutate: func(r *protocol.AdapterRequest) {
+			r.Shell, r.ShellVersion = "bash", "4.0.44(1)-release"
+			r.EditorBackend, r.EditorVersion = protocol.EditorBackendReadline, r.ShellVersion
+		}},
+		{name: "Bash 3.2 ble.sh", mutate: func(r *protocol.AdapterRequest) {
+			r.Shell, r.ShellVersion = "bash", "3.2.57(1)-release"
+			r.EditorBackend, r.EditorVersion = protocol.EditorBackendBlesh, protocol.BleshVersion
+		}},
+		{name: "modern Bash ble.sh", mutate: func(r *protocol.AdapterRequest) {
+			r.Shell, r.ShellVersion = "bash", "5.2.37(1)-release"
+			r.EditorBackend, r.EditorVersion = protocol.EditorBackendBlesh, protocol.BleshVersion
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			request := validRequest()
+			test.mutate(&request)
+			if err := ValidateRequest(request); err != nil {
+				t.Fatalf("ValidateRequest() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestRewriteRejectsIncoherentBackendBeforeProvider(t *testing.T) {
+	t.Parallel()
+	router := &stubRouter{}
+	request := validRequest()
+	request.EditorBackend = protocol.EditorBackendReadline
+	_, err := testService(router, &stubSafety{}).Rewrite(context.Background(), request)
+	if apperr.KindOf(err) != apperr.KindProtocol {
+		t.Fatalf("kind = %q; err=%v", apperr.KindOf(err), err)
+	}
+	if router.calls != 0 {
+		t.Fatalf("provider was called %d times", router.calls)
 	}
 }
 
@@ -311,7 +381,8 @@ func TestErrorResponseRedactsPromptAndInternalCauses(t *testing.T) {
 func validRequest() protocol.AdapterRequest {
 	return protocol.AdapterRequest{
 		Version: protocol.AdapterVersion, Action: protocol.ActionRewrite,
-		Shell: "zsh", ShellVersion: "5.9", Buffer: "find TODOs", Cursor: len("find TODOs"), RequestID: "request-1",
+		Shell: "zsh", ShellVersion: "5.9", EditorBackend: protocol.EditorBackendZLE, EditorVersion: "5.9",
+		Buffer: "find TODOs", Cursor: len("find TODOs"), RequestID: "request-1",
 	}
 }
 

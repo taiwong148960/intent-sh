@@ -182,13 +182,32 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 	for _, binding := range plan.Bindings {
 		fmt.Fprintf(stdout, "- %s\n", binding)
 	}
-	if len(plan.Conflicts) > 0 {
+	if plan.Shell == setupguide.ShellBash {
+		fmt.Fprintln(stdout, "\nOptional Bash 3.2 compatibility (user managed):")
+		fmt.Fprintf(stdout, "- Bash 3.2 requires ble.sh %s from commit %s.\n", plan.BleshVersion, plan.BleshCommit)
+		fmt.Fprintf(stdout, "- Install and manage ble.sh separately using the official project: %s\n", plan.BleshInstallURL)
+		fmt.Fprintln(stdout, "- Load and attach ble.sh before this activation line; setup never downloads or sources it.")
+		fmt.Fprintln(stdout, "- Bash 4.0+ can use native Readline when ble.sh is not attached; stock Zsh is another native alternative.")
+		fmt.Fprintln(stdout, "- Review existing ble-bind M-g/M-u bindings and accept-line advice before activation.")
+	}
+	if len(plan.Conflicts) > 0 || plan.BleshLoadOrderConflict {
 		fmt.Fprintln(stdout, "\nWarnings:")
 		for _, conflict := range plan.Conflicts {
-			fmt.Fprintf(stdout, "- %s already has a custom %s binding; review it before activation.\n", plan.Shell, conflict.Key)
+			backend := conflict.Backend
+			if backend == "" {
+				backend = setupguide.ConflictBackendNative
+			}
+			fmt.Fprintf(stdout, "- %s already has a custom %s %s binding; review it before activation.\n", plan.Shell, backend, conflict.Key)
+		}
+		if plan.BleshLoadOrderConflict {
+			fmt.Fprintln(stdout, "- intent-sh appears before ble.sh in the startup file; move the intent-sh activation after ble.sh is attached.")
 		}
 	}
-	fmt.Fprintf(stdout, "\nRemoval: delete this exact line from %s:\n%s\n\nNo startup file was modified.\n", textsafe.Terminal(plan.StartupFile, 4096), plan.Activation)
+	fmt.Fprintf(stdout, "\nRemoval: delete this exact line from %s:\n%s\n", textsafe.Terminal(plan.StartupFile, 4096), plan.Activation)
+	if plan.Shell == setupguide.ShellBash {
+		fmt.Fprintln(stdout, "This removes only intent-sh integration; it does not remove the independently managed ble.sh installation.")
+	}
+	fmt.Fprintln(stdout, "\nNo startup file was modified.")
 	return apperr.ExitOK
 }
 

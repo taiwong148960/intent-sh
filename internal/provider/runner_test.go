@@ -96,6 +96,14 @@ func TestProcessRunnerBoundariesAndCleanup(t *testing.T) {
 			"ANTHROPIC_API_KEY=secret-anthropic",
 			"OPENAI_API_KEY=secret-openai",
 			"INTENT_SECRET=secret-other",
+			"INTENT_SH_ADAPTER_PROTOCOL=secret-protocol",
+			"INTENT_SH_ADAPTER_BACKEND=secret-backend",
+			"INTENT_SH_ADAPTER_EDITOR_VERSION=secret-editor-version",
+			"INTENT_SH_ADAPTER_READY=secret-ready",
+			"INTENT_SH_ADAPTER_FAILURE=secret-failure",
+			"INTENT_SH_ADAPTER_CONFLICTS=secret-binding",
+			"BLE_VERSION=secret-blesh-version",
+			"BLE_ATTACHED=secret-blesh-attachment",
 		},
 	}
 	wantArg := `literal spaces ; $(touch should-not-run) "quotes"`
@@ -130,7 +138,12 @@ func TestProcessRunnerBoundariesAndCleanup(t *testing.T) {
 	if len(capture.Entries) != 0 {
 		t.Fatalf("initial workdir entries = %#v, want empty", capture.Entries)
 	}
-	for _, key := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "INTENT_SECRET"} {
+	for _, key := range []string{
+		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "INTENT_SECRET",
+		"INTENT_SH_ADAPTER_PROTOCOL", "INTENT_SH_ADAPTER_BACKEND", "INTENT_SH_ADAPTER_EDITOR_VERSION",
+		"INTENT_SH_ADAPTER_READY", "INTENT_SH_ADAPTER_FAILURE", "INTENT_SH_ADAPTER_CONFLICTS",
+		"BLE_VERSION", "BLE_ATTACHED",
+	} {
 		if _, ok := capture.Env[key]; ok {
 			t.Fatalf("prohibited environment key %s reached child", key)
 		}

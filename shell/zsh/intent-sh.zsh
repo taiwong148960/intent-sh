@@ -1,18 +1,20 @@
-# intent-sh Zsh adapter (protocol 1)
+# intent-sh Zsh adapter (protocol 2)
 # Loaded through: eval "$(intent-sh init zsh)"
 
 [[ -o interactive ]] || return 0
 
 if (( ${+__intent_sh_loaded} )); then
-    if [[ ${__intent_sh_protocol_version-} != 1 ]]; then
-        print -u2 -- "intent-sh: loaded adapter protocol ${__intent_sh_protocol_version-unknown} is incompatible with protocol 1"
+    if [[ ${__intent_sh_protocol_version-} != 2 ]]; then
+        print -u2 -- "intent-sh: loaded adapter protocol ${__intent_sh_protocol_version-unknown} is incompatible with protocol 2"
         return 1
     fi
     return 0
 fi
 
 typeset -g __intent_sh_loaded=1
-typeset -g __intent_sh_protocol_version=1
+typeset -g __intent_sh_protocol_version=2
+typeset -g __intent_sh_editor_backend=zle
+typeset -g __intent_sh_editor_version=$ZSH_VERSION
 typeset -g __intent_sh_original_buffer=
 typeset -gi __intent_sh_original_cursor=0
 typeset -g __intent_sh_generated_command=
@@ -39,6 +41,13 @@ function __intent_sh_clear_chain() {
 
 function __intent_sh_message() {
     zle -M -- "intent-sh: $1"
+}
+
+function __intent_sh_cursor_to_protocol_bytes() {
+    local text=$1 editor_cursor=$2 prefix=
+    (( editor_cursor > 0 )) && prefix=${text[1,editor_cursor]}
+    local LC_ALL=C
+    typeset -g __intent_sh_protocol_cursor_bytes=${#prefix}
 }
 
 function __intent_sh_read_response() {
@@ -72,6 +81,8 @@ function __intent_sh_rewrite() {
     setopt localtraps
     local current=$BUFFER
     local current_cursor=$CURSOR
+    __intent_sh_cursor_to_protocol_bytes "$current" "$current_cursor"
+    local current_protocol_cursor=$__intent_sh_protocol_cursor_bytes
     local request_original= request_previous=
     local request_generation=0 pending_original=$current
     local pending_original_cursor=$current_cursor
@@ -116,8 +127,10 @@ function __intent_sh_rewrite() {
             rewrite \
             zsh \
             "$ZSH_VERSION" \
+            "$__intent_sh_editor_backend" \
+            "$__intent_sh_editor_version" \
             "$current" \
-            "$current_cursor" \
+            "$current_protocol_cursor" \
             "$request_original" \
             "$request_previous" \
             "$request_generation" \
@@ -264,3 +277,12 @@ bindkey '^[g' intent-sh-rewrite
 bindkey '^[u' intent-sh-undo
 bindkey '^M' intent-sh-accept-line
 bindkey '^J' intent-sh-accept-line
+
+# Export only bounded capability markers for child diagnostics. Buffer,
+# generated-command, and binding-body state remains private to this shell.
+typeset -gx INTENT_SH_ADAPTER_PROTOCOL=2
+typeset -gx INTENT_SH_ADAPTER_BACKEND=zle
+typeset -gx INTENT_SH_ADAPTER_EDITOR_VERSION=$ZSH_VERSION
+typeset -gx INTENT_SH_ADAPTER_READY=1
+typeset -gx INTENT_SH_ADAPTER_FAILURE=
+typeset -gx INTENT_SH_ADAPTER_CONFLICTS=

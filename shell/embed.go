@@ -9,7 +9,7 @@ import (
 	"github.com/taiwong148960/intent-sh/internal/apperr"
 )
 
-const ProtocolVersion = "1"
+const ProtocolVersion = "2"
 
 //go:embed bash/intent-sh.bash
 var bashScript string

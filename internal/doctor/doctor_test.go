@@ -145,24 +145,170 @@ func TestProviderProbeStageChecks(t *testing.T) {
 	}
 }
 
-func TestBashThreeAndKeyConflictsFailClosed(t *testing.T) {
+func TestBashThreeWithoutBleshAndNativeKeyConflictsFailClosed(t *testing.T) {
 	t.Parallel()
 	deps := healthyDependencies()
 	deps.ShellPath = "/bin/bash"
 	deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 3.2.57", nil }
+	deps.AdapterStatus = func() AdapterStatus {
+		return AdapterStatus{
+			Present: true, Protocol: protocol.AdapterVersion, Backend: "none",
+			EditorVersion: "none", Ready: "0", Failure: "missing_blesh",
+		}
+	}
 	deps.InspectSetup = func(string) (setupguide.Plan, error) {
 		return setupguide.Plan{Conflicts: []setupguide.Conflict{{Key: "Alt+G"}, {Key: "Enter (CR)"}}}, nil
 	}
 	report := (Runner{Dependencies: deps}).Run(context.Background())
 	checks := checksByID(report)
-	if report.Ready || checks["shell.compatibility"].Status != StatusFail || checks["shell.default_keys"].Status != StatusFail {
+	if report.Ready || checks["shell.compatibility"].Status != StatusPass || checks["shell.editor_backend"].Status != StatusFail || checks["shell.default_keys"].Status != StatusFail {
 		t.Fatalf("report = %#v", report)
 	}
 	output := render(report)
-	for _, want := range []string{"below the 4.0 minimum", "stock Zsh", "Alt+G, Enter (CR)"} {
+	for _, want := range []string{"conditionally supported", "tested ble.sh", "stock Zsh", "Alt+G, Enter (CR)"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output omitted %q:\n%s", want, output)
 		}
+	}
+}
+
+func TestBashThreeWithTestedBleshIsReady(t *testing.T) {
+	t.Parallel()
+	deps := healthyDependencies()
+	deps.ShellPath = "/bin/bash"
+	deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 3.2.57", nil }
+	deps.AdapterStatus = func() AdapterStatus {
+		return AdapterStatus{
+			Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
+			EditorVersion: protocol.BleshVersion, Ready: "1",
+		}
+	}
+	report := (Runner{Dependencies: deps}).Run(context.Background())
+	checks := checksByID(report)
+	if !report.Ready {
+		t.Fatalf("report = %#v", report)
+	}
+	for _, id := range []string{"shell.compatibility", "shell.editor_backend", "shell.blesh.version", "shell.blesh.api", "shell.blesh.attachment", "shell.blesh.load_order", "shell.backend_keys"} {
+		if checks[id].Status != StatusPass {
+			t.Fatalf("check %s = %#v", id, checks[id])
+		}
+	}
+}
+
+func TestBashBackendCapabilityFailuresAreSpecificAndFailClosed(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		status     AdapterStatus
+		plan       setupguide.Plan
+		checkID    string
+		wantDetail string
+	}{
+		{
+			name: "native readline is incoherent",
+			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendReadline,
+				EditorVersion: "3.2.57(1)-release", Ready: "1"},
+			checkID: "shell.editor_backend", wantDetail: "incompatible with this shell version",
+		},
+		{
+			name: "unsupported version",
+			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
+				EditorVersion: "0.4.0-unsupported", Ready: "0", Failure: "incompatible_version"},
+			checkID: "shell.blesh.version", wantDetail: "does not match",
+		},
+		{
+			name: "missing API",
+			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
+				EditorVersion: protocol.BleshVersion, Ready: "0", Failure: "missing_api"},
+			checkID: "shell.blesh.api", wantDetail: "required ble.sh",
+		},
+		{
+			name: "detached",
+			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
+				EditorVersion: protocol.BleshVersion, Ready: "0", Failure: "detached"},
+			checkID: "shell.blesh.attachment", wantDetail: "not reported",
+		},
+		{
+			name: "runtime key conflict",
+			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
+				EditorVersion: protocol.BleshVersion, Ready: "0", Failure: "binding_conflict", Conflicts: "M-g"},
+			checkID: "shell.backend_keys", wantDetail: "Alt+G",
+		},
+		{
+			name: "static load order",
+			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
+				EditorVersion: protocol.BleshVersion, Ready: "1"},
+			plan:    setupguide.Plan{BleshLoadOrderConflict: true},
+			checkID: "shell.blesh.load_order", wantDetail: "intent-sh before ble.sh",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			deps := healthyDependencies()
+			deps.ShellPath = "/bin/bash"
+			deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 3.2.57", nil }
+			deps.AdapterStatus = func() AdapterStatus { return test.status }
+			deps.InspectSetup = func(string) (setupguide.Plan, error) { return test.plan, nil }
+			report := (Runner{Dependencies: deps}).Run(context.Background())
+			check := checksByID(report)[test.checkID]
+			if report.Ready || check.Status != StatusFail || !strings.Contains(check.Detail, test.wantDetail) {
+				t.Fatalf("check %s = %#v; report ready=%v", test.checkID, check, report.Ready)
+			}
+		})
+	}
+}
+
+func TestDoctorNeverPrintsUnboundedAdapterOrBindingValues(t *testing.T) {
+	t.Parallel()
+	secret := "SECRET_INTENT_GENERATED_BINDING_CREDENTIAL"
+	deps := healthyDependencies()
+	deps.ShellPath = "/bin/bash"
+	deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 3.2.57", nil }
+	deps.AdapterStatus = func() AdapterStatus {
+		return AdapterStatus{
+			Present: true, Protocol: protocol.AdapterVersion, Backend: strings.Repeat(secret, 20),
+			EditorVersion: secret + "\x1b[31m", Ready: "1", Failure: secret, Conflicts: secret,
+		}
+	}
+	deps.InspectSetup = func(string) (setupguide.Plan, error) {
+		return setupguide.Plan{Conflicts: []setupguide.Conflict{
+			{Backend: setupguide.ConflictBackendNative, Key: secret},
+			{Backend: setupguide.ConflictBackendBlesh, Key: secret},
+		}}, nil
+	}
+	report := (Runner{Dependencies: deps}).Run(context.Background())
+	output := render(report)
+	if report.Ready || !strings.Contains(output, "invalid or unbounded") {
+		t.Fatalf("adversarial report = %#v", report)
+	}
+	if strings.Contains(output, secret) || strings.Contains(output, "\x1b") {
+		t.Fatalf("untrusted adapter or binding value leaked:\n%s", output)
+	}
+	if !strings.Contains(output, "unknown key") {
+		t.Fatalf("bounded unknown-key diagnostic missing:\n%s", output)
+	}
+}
+
+func TestInspectAdapterStatusAcceptsOnlyBoundedMarkers(t *testing.T) {
+	values := map[string]string{
+		"INTENT_SH_ADAPTER_PROTOCOL":       protocol.AdapterVersion,
+		"INTENT_SH_ADAPTER_BACKEND":        protocol.EditorBackendBlesh,
+		"INTENT_SH_ADAPTER_EDITOR_VERSION": protocol.BleshVersion,
+		"INTENT_SH_ADAPTER_READY":          "1",
+		"INTENT_SH_ADAPTER_FAILURE":        "",
+		"INTENT_SH_ADAPTER_CONFLICTS":      "",
+	}
+	for key, value := range values {
+		t.Setenv(key, value)
+	}
+	status := inspectAdapterStatus()
+	if !status.Present || status.Invalid || !validAdapterStatus(status) {
+		t.Fatalf("valid environment markers rejected: %#v", status)
+	}
+	t.Setenv("INTENT_SH_ADAPTER_CONFLICTS", strings.Repeat("x", 97))
+	status = inspectAdapterStatus()
+	if !status.Invalid || validAdapterStatus(status) {
+		t.Fatalf("unbounded environment marker accepted: %#v", status)
 	}
 }
 
@@ -207,9 +353,15 @@ func healthyDependencies() Dependencies {
 			return config.Defaults(), "/home/test/.config/intent-sh/config.toml", nil
 		},
 		CheckProtocol: func() error { return nil },
-		InspectSetup:  func(string) (setupguide.Plan, error) { return setupguide.Plan{}, nil },
-		LookPath:      func(string) (string, error) { return "/bin/provider", nil },
-		ShellVersion:  func(context.Context, string) (string, error) { return "zsh 5.9", nil },
+		AdapterStatus: func() AdapterStatus {
+			return AdapterStatus{
+				Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendZLE,
+				EditorVersion: "5.9", Ready: "1",
+			}
+		},
+		InspectSetup: func(string) (setupguide.Plan, error) { return setupguide.Plan{}, nil },
+		LookPath:     func(string) (string, error) { return "/bin/provider", nil },
+		ShellVersion: func(context.Context, string) (string, error) { return "zsh 5.9", nil },
 		Providers: map[string]provider.Provider{
 			provider.NameClaude: fakeProvider{name: provider.NameClaude, result: provider.ProbeResult{Provider: provider.NameClaude, Version: "1.0"}},
 			provider.NameCodex:  fakeProvider{name: provider.NameCodex, result: provider.ProbeResult{Provider: provider.NameCodex, Version: "1.0"}},
