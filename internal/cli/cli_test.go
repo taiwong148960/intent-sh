@@ -40,6 +40,25 @@ type cliDoctor struct {
 
 func (item cliDoctor) Run(context.Context) doctor.Report { return item.report }
 
+type cliDoctorKeys struct {
+	ordinary doctor.Report
+	keys     doctor.Report
+	keyCalls int
+}
+
+func (item *cliDoctorKeys) Run(context.Context) doctor.Report { return item.ordinary }
+func (item *cliDoctorKeys) RunKeys(context.Context) doctor.Report {
+	item.keyCalls++
+	return item.keys
+}
+
+type failOnRead struct{ t *testing.T }
+
+func (reader failOnRead) Read([]byte) (int, error) {
+	reader.t.Fatal("doctor consumed ordinary stdin")
+	return 0, errors.New("unreachable")
+}
+
 func (s cliSafety) Evaluate(context.Context, string, string, string) (safety.Decision, error) {
 	return s.decision, s.err
 }
@@ -74,6 +93,18 @@ func TestVersionHelpAndInvalidDispatch(t *testing.T) {
 				t.Fatalf("output = %q, want %q", output, test.wantOutput)
 			}
 		})
+	}
+}
+
+func TestHelpExplainsInteractiveKeyProbeAndReadOnlySetup(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"help"}, strings.NewReader("ignored"), &stdout, &stderr); code != apperr.ExitOK {
+		t.Fatalf("help exit = %d, stderr = %q", code, stderr.String())
+	}
+	for _, want := range []string{"doctor --keys", "bounded keys from /dev/tty", "no provider is invoked", "read-only activation", "removal guidance"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("help omitted %q: %q", want, stdout.String())
+		}
 	}
 }
 
@@ -180,8 +211,10 @@ func TestConfigCommands(t *testing.T) {
 	if exit := Run([]string{"config", "show"}, strings.NewReader(""), &stdout, &stderr); exit != apperr.ExitOK {
 		t.Fatalf("config show exit=%d stderr=%q", exit, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), `provider = 'auto'`) {
-		t.Fatalf("default config = %q", stdout.String())
+	for _, want := range []string{`provider = 'auto'`, `rewrite_key = 'alt+g'`, `undo_key = 'alt+u'`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("default config %q omitted %q", stdout.String(), want)
+		}
 	}
 
 	stdout.Reset()
@@ -195,6 +228,92 @@ func TestConfigCommands(t *testing.T) {
 	loaded, err := config.LoadAt(wantPath)
 	if err != nil || loaded.Provider != config.ProviderCodex {
 		t.Fatalf("persisted config=%#v err=%v", loaded, err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if exit := Run([]string{"config", "set", "rewrite_key", "CTRL+X"}, strings.NewReader(""), &stdout, &stderr); exit != apperr.ExitOK {
+		t.Fatalf("binding config set exit=%d stderr=%q", exit, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `rewrite_key = 'ctrl+x'`) || !strings.Contains(stdout.String(), `undo_key = 'alt+u'`) {
+		t.Fatalf("complete canonical config = %q", stdout.String())
+	}
+}
+
+func TestInitAndSetupUseCustomBindingsWithoutMutatingUserState(t *testing.T) {
+	home := t.TempDir()
+	xdg := filepath.Join(home, "xdg")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("TERM", "xterm-256color")
+	startup := filepath.Join(home, ".zshrc")
+	startupContent := []byte("# keep me\nbindkey '^X' custom\n")
+	if err := os.WriteFile(startup, startupContent, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(xdg, "intent-sh", "config.toml")
+	cfg := config.Defaults()
+	cfg.RewriteKey = "ctrl+x"
+	cfg.UndoKey = "alt+'"
+	if err := config.WriteAt(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if exit := Run([]string{"init", "zsh"}, strings.NewReader("stdin-must-not-be-read"), &stdout, &stderr); exit != apperr.ExitOK || stderr.Len() != 0 {
+		t.Fatalf("init exit=%d stderr=%q", exit, stderr.String())
+	}
+	for _, want := range []string{`\x18`, `\x1b\x27`, "INTENT_SH_ADAPTER_REWRITE_KEY", "INTENT_SH_ADAPTER_UNDO_KEY"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("custom init omitted %q", want)
+		}
+	}
+	if strings.Contains(stdout.String(), "CTRL+X") || strings.Contains(stdout.String(), "alt+'") {
+		t.Fatal("init emitted raw configuration text")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if exit := Run([]string{"setup", "zsh"}, strings.NewReader("stdin-must-not-be-read"), &stdout, &stderr); exit != apperr.ExitOK || stderr.Len() != 0 {
+		t.Fatalf("setup exit=%d stderr=%q", exit, stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"Effective bindings:", "Ctrl+X: rewrite", "Alt+': restore", "already has a custom native Ctrl+X binding",
+		"Removal: delete this exact line from " + startup + ":\n" + `eval "$(intent-sh init zsh)"`,
+		"No startup file was modified.",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("setup output omitted %q:\n%s", want, output)
+		}
+	}
+	after, err := os.ReadFile(startup)
+	if err != nil || !bytes.Equal(after, startupContent) {
+		t.Fatalf("startup file changed: %q, %v", after, err)
+	}
+	if os.Getenv("TERM") != "xterm-256color" {
+		t.Fatal("terminal setting changed")
+	}
+}
+
+func TestInvalidBindingConfigMakesInitAndSetupFailWithoutPartialOutput(t *testing.T) {
+	home := t.TempDir()
+	xdg := filepath.Join(home, "xdg")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	path := filepath.Join(xdg, "intent-sh", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("rewrite_key = \"ctrl+c\"\nundo_key = \"alt+u\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "zsh"}, {"setup", "zsh"}} {
+		var stdout, stderr bytes.Buffer
+		exit := Run(args, strings.NewReader("stdin-must-not-be-read"), &stdout, &stderr)
+		if exit != apperr.ExitConfiguration || stdout.Len() != 0 || !strings.Contains(stderr.String(), "rewrite_key") {
+			t.Fatalf("%v exit=%d stdout=%q stderr=%q", args, exit, stdout.String(), stderr.String())
+		}
 	}
 }
 
@@ -267,6 +386,26 @@ func TestDoctorCommandUsesReportOutcome(t *testing.T) {
 				t.Fatalf("exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 			}
 		})
+	}
+}
+
+func TestDoctorKeysUsesExplicitInteractiveRunnerWithoutReadingStdin(t *testing.T) {
+	t.Parallel()
+	runner := &cliDoctorKeys{
+		ordinary: doctor.Report{Ready: true},
+		keys: doctor.Report{Ready: false, FailureKind: apperr.KindConfiguration, Checks: []doctor.Check{
+			{Status: doctor.StatusFail, ID: "terminal.keys.tty", Detail: "controlling terminal is unavailable", Guidance: "run directly from a terminal"},
+		}},
+	}
+	var stdout, stderr bytes.Buffer
+	exit := (Command{Doctor: runner}).Run(context.Background(), []string{"doctor", "--keys"}, failOnRead{t}, &stdout, &stderr)
+	if exit != apperr.ExitConfiguration || runner.keyCalls != 1 || stderr.Len() != 0 {
+		t.Fatalf("exit=%d calls=%d stdout=%q stderr=%q", exit, runner.keyCalls, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{"FAIL terminal.keys.tty", "run directly from a terminal", "NOT_READY"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("doctor --keys omitted %q: %s", want, stdout.String())
+		}
 	}
 }
 

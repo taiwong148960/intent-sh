@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -72,6 +73,75 @@ func TestInspectDetectsOnlyRelevantUnsupportedBindings(t *testing.T) {
 		if !reflect.DeepEqual(plan.Conflicts, test.want) {
 			t.Fatalf("%s conflicts = %#v, want %#v", test.shell, plan.Conflicts, test.want)
 		}
+	}
+}
+
+func TestInspectWithBindingsUsesEffectiveCustomKeys(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		shell   string
+		content string
+	}{
+		{ShellZsh, "bindkey '^X' custom-rewrite\nbindkey $'\\x1b\\x27' custom-undo\nbindkey '^[g' unrelated-default\n"},
+		{ShellBash, `bind -x '"\C-x":custom-rewrite'` + "\n" + `bind -x '"\x1b\x27":custom-undo'` + "\n" + `bind -x '"\eg":unrelated-default'` + "\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.shell, func(t *testing.T) {
+			plan, err := InspectWithBindings(test.shell, Options{
+				Home: "/home/tester", GOOS: "linux",
+				Exists:      func(string) bool { return true },
+				ReadBounded: func(string, int) ([]byte, error) { return []byte(test.content), nil },
+			}, "CTRL+X", "alt+'")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []Conflict{{Backend: ConflictBackendNative, Key: "Ctrl+X"}, {Backend: ConflictBackendNative, Key: "Alt+'"}}
+			if !reflect.DeepEqual(plan.Conflicts, want) {
+				t.Fatalf("conflicts = %#v, want %#v", plan.Conflicts, want)
+			}
+			if plan.RewriteKey != "ctrl+x" || plan.UndoKey != "alt+'" || !strings.Contains(strings.Join(plan.Bindings, "\n"), "Ctrl+X") {
+				t.Fatalf("effective plan = %#v", plan)
+			}
+		})
+	}
+}
+
+func TestInspectWithBindingsRejectsDuplicateReservedAndAdversarialValues(t *testing.T) {
+	t.Parallel()
+	options := Options{
+		Home: "/home/tester", GOOS: "linux",
+		ReadBounded: func(string, int) ([]byte, error) {
+			t.Fatal("invalid binding reached startup-file inspection")
+			return nil, nil
+		},
+	}
+	for _, test := range []struct {
+		name    string
+		rewrite string
+		undo    string
+		want    string
+	}{
+		{name: "duplicate", rewrite: "ALT+G", undo: "alt+g", want: "distinct"},
+		{name: "reserved", rewrite: "ctrl+c", undo: "alt+u", want: "rewrite_key"},
+		{name: "injection", rewrite: "alt+g;touch /tmp/nope", undo: "alt+u", want: "rewrite_key"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := InspectWithBindings(ShellZsh, options, test.rewrite, test.undo)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+
+	plan, err := InspectWithBindings(ShellZsh, Options{
+		Home: "/home/tester", GOOS: "linux", Exists: func(string) bool { return false },
+		ReadBounded: func(string, int) ([]byte, error) { return nil, os.ErrNotExist },
+	}, "alt+;", "alt+'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(plan.Bindings, "\n"), "Alt+;") || !strings.Contains(strings.Join(plan.Bindings, "\n"), "Alt+'") {
+		t.Fatalf("adversarial punctuation was not rendered as bounded display text: %#v", plan.Bindings)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/taiwong148960/intent-sh/internal/apperr"
 	"github.com/taiwong148960/intent-sh/internal/config"
+	"github.com/taiwong148960/intent-sh/internal/keyprobe"
 	"github.com/taiwong148960/intent-sh/internal/protocol"
 	"github.com/taiwong148960/intent-sh/internal/provider"
 	setupguide "github.com/taiwong148960/intent-sh/internal/setup"
@@ -70,6 +71,56 @@ func TestReadyWhenOneAutoProviderIsUsable(t *testing.T) {
 	}
 	if strings.Contains(output, "SECRET_VERSION_OUTPUT") {
 		t.Fatalf("raw version output leaked:\n%s", output)
+	}
+}
+
+func TestRunKeysAppendsInteractiveChecksAndUsesConfiguredChords(t *testing.T) {
+	t.Parallel()
+	deps := healthyDependencies()
+	deps.LoadConfig = func() (config.Config, string, error) {
+		cfg := config.Defaults()
+		cfg.RewriteKey = "ctrl+x"
+		cfg.UndoKey = "alt+'"
+		return cfg, "", nil
+	}
+	var gotRewrite, gotUndo string
+	deps.KeyProbe = func(_ context.Context, rewriteKey, undoKey string) keyprobe.Result {
+		gotRewrite, gotUndo = rewriteKey, undoKey
+		checks := make([]keyprobe.Check, 0, 6)
+		for _, id := range []string{keyprobe.CheckTTY, keyprobe.CheckRewrite, keyprobe.CheckUndo, keyprobe.CheckEnter, keyprobe.CheckCancel, keyprobe.CheckRestore} {
+			checks = append(checks, keyprobe.Check{Status: keyprobe.StatusPass, ID: id, Detail: "passed"})
+		}
+		return keyprobe.Result{Checks: checks, Ready: true}
+	}
+	report := (Runner{Dependencies: deps}).RunKeys(context.Background())
+	if !report.Ready || gotRewrite != "ctrl+x" || gotUndo != "alt+'" {
+		t.Fatalf("report=%#v configured keys=%q/%q", report, gotRewrite, gotUndo)
+	}
+	checks := checksByID(report)
+	for _, id := range []string{keyprobe.CheckTTY, keyprobe.CheckRewrite, keyprobe.CheckUndo, keyprobe.CheckEnter, keyprobe.CheckCancel, keyprobe.CheckRestore} {
+		if checks[id].Status != StatusPass {
+			t.Fatalf("key check %s = %#v", id, checks[id])
+		}
+	}
+}
+
+func TestRunKeysFailsActionablyWithoutControllingTerminal(t *testing.T) {
+	t.Parallel()
+	deps := healthyDependencies()
+	deps.KeyProbe = func(context.Context, string, string) keyprobe.Result {
+		checks := []keyprobe.Check{{Status: keyprobe.StatusFail, ID: keyprobe.CheckTTY, Detail: "controlling terminal is unavailable", Guidance: "run directly from a terminal"}}
+		for _, id := range []string{keyprobe.CheckRewrite, keyprobe.CheckUndo, keyprobe.CheckEnter, keyprobe.CheckCancel, keyprobe.CheckRestore} {
+			checks = append(checks, keyprobe.Check{Status: keyprobe.StatusSkip, ID: id, Detail: "not checked"})
+		}
+		return keyprobe.Result{Checks: checks}
+	}
+	report := (Runner{Dependencies: deps}).RunKeys(context.Background())
+	checks := checksByID(report)
+	if report.Ready || report.FailureKind != apperr.KindConfiguration || checks[keyprobe.CheckTTY].Status != StatusFail {
+		t.Fatalf("report = %#v", report)
+	}
+	if checks[keyprobe.CheckRewrite].Status != StatusSkip || !strings.Contains(render(report), "run directly from a terminal") {
+		t.Fatalf("actionable skipped checks missing: %#v", report)
 	}
 }
 

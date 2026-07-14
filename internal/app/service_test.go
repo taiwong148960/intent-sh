@@ -71,6 +71,8 @@ func TestRewriteOrchestratesSuccessfulCommand(t *testing.T) {
 	cfg.Priority = []string{config.ProviderCodex, config.ProviderClaude}
 	cfg.TimeoutSeconds = 17
 	cfg.Model = "configured-model"
+	cfg.RewriteKey = "alt+~"
+	cfg.UndoKey = "ctrl+x"
 	contextBuilder := &stubContextBuilder{environment: contextinfo.Environment{
 		OS: "linux", Arch: "arm64", Shell: "zsh", ShellVersion: "5.9", CWD: "/work", AvailableTools: []string{"rg"},
 	}}
@@ -104,8 +106,10 @@ func TestRewriteOrchestratesSuccessfulCommand(t *testing.T) {
 	if router.request.Model != cfg.Model || router.request.Timeout != 17*time.Second || !strings.Contains(router.request.Prompt, `"buffer":"find TODOs"`) {
 		t.Fatalf("provider request = %#v", router.request)
 	}
-	if strings.Contains(router.request.Prompt, "editorBackend") || strings.Contains(router.request.Prompt, protocol.BleshVersion) {
-		t.Fatalf("editor compatibility metadata reached the model prompt: %q", router.request.Prompt)
+	for _, prohibited := range []string{"editorBackend", protocol.BleshVersion, cfg.RewriteKey, cfg.UndoKey, "rewriteKey", "undoKey", "TERM_PROGRAM"} {
+		if strings.Contains(router.request.Prompt, prohibited) {
+			t.Fatalf("local binding or terminal metadata %q reached the model prompt: %q", prohibited, router.request.Prompt)
+		}
 	}
 	if !strings.Contains(router.request.Prompt, `"availableTools":["rg"]`) || contextBuilder.gotCWD != "/work" {
 		t.Fatalf("context was not included correctly: prompt=%q context=%#v", router.request.Prompt, contextBuilder)

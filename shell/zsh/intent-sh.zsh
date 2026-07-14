@@ -3,9 +3,22 @@
 
 [[ -o interactive ]] || return 0
 
+typeset __intent_sh_requested_rewrite_key=__INTENT_SH_REWRITE_CANONICAL__
+typeset __intent_sh_requested_undo_key=__INTENT_SH_UNDO_CANONICAL__
+typeset __intent_sh_requested_rewrite_binding=$'__INTENT_SH_REWRITE_BINDING__'
+typeset __intent_sh_requested_undo_binding=$'__INTENT_SH_UNDO_BINDING__'
+[[ $__intent_sh_requested_rewrite_key == __INTENT_SH_""REWRITE_CANONICAL__ ]] && __intent_sh_requested_rewrite_key=alt+g
+[[ $__intent_sh_requested_undo_key == __INTENT_SH_""UNDO_CANONICAL__ ]] && __intent_sh_requested_undo_key=alt+u
+[[ $__intent_sh_requested_rewrite_binding == __INTENT_SH_""REWRITE_BINDING__ ]] && __intent_sh_requested_rewrite_binding=$'\x1b\x67'
+[[ $__intent_sh_requested_undo_binding == __INTENT_SH_""UNDO_BINDING__ ]] && __intent_sh_requested_undo_binding=$'\x1b\x75'
+
 if (( ${+__intent_sh_loaded} )); then
     if [[ ${__intent_sh_protocol_version-} != 2 ]]; then
         print -u2 -- "intent-sh: loaded adapter protocol ${__intent_sh_protocol_version-unknown} is incompatible with protocol 2"
+        return 1
+    fi
+    if [[ ${__intent_sh_rewrite_key-} != "$__intent_sh_requested_rewrite_key" || ${__intent_sh_undo_key-} != "$__intent_sh_requested_undo_key" ]]; then
+        print -u2 -- "intent-sh: different rewrite or undo bindings are already active; start a new shell before loading the new configuration"
         return 1
     fi
     return 0
@@ -15,6 +28,8 @@ typeset -g __intent_sh_loaded=1
 typeset -g __intent_sh_protocol_version=2
 typeset -g __intent_sh_editor_backend=zle
 typeset -g __intent_sh_editor_version=$ZSH_VERSION
+typeset -g __intent_sh_rewrite_key=$__intent_sh_requested_rewrite_key
+typeset -g __intent_sh_undo_key=$__intent_sh_requested_undo_key
 typeset -g __intent_sh_original_buffer=
 typeset -gi __intent_sh_original_cursor=0
 typeset -g __intent_sh_generated_command=
@@ -273,8 +288,8 @@ function __intent_sh_accept_line() {
 zle -N intent-sh-rewrite __intent_sh_rewrite
 zle -N intent-sh-undo __intent_sh_undo
 zle -N intent-sh-accept-line __intent_sh_accept_line
-bindkey '^[g' intent-sh-rewrite
-bindkey '^[u' intent-sh-undo
+bindkey "$__intent_sh_requested_rewrite_binding" intent-sh-rewrite
+bindkey "$__intent_sh_requested_undo_binding" intent-sh-undo
 bindkey '^M' intent-sh-accept-line
 bindkey '^J' intent-sh-accept-line
 
@@ -286,3 +301,5 @@ typeset -gx INTENT_SH_ADAPTER_EDITOR_VERSION=$ZSH_VERSION
 typeset -gx INTENT_SH_ADAPTER_READY=1
 typeset -gx INTENT_SH_ADAPTER_FAILURE=
 typeset -gx INTENT_SH_ADAPTER_CONFLICTS=
+typeset -gx INTENT_SH_ADAPTER_REWRITE_KEY=$__intent_sh_rewrite_key
+typeset -gx INTENT_SH_ADAPTER_UNDO_KEY=$__intent_sh_undo_key

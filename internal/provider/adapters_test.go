@@ -256,6 +256,25 @@ func TestCodexProbeChecksCapabilitiesAndLogin(t *testing.T) {
 	}
 }
 
+func TestProviderSubprocessArgumentsExcludeBindingsAndTerminalMetadata(t *testing.T) {
+	t.Parallel()
+	argumentSets := [][]string{
+		claudeArgs("model-sentinel")("/tmp/provider-work"),
+		codexArgs("model-sentinel")("/tmp/provider-work"),
+	}
+	for _, args := range argumentSets {
+		joined := strings.Join(args, "\x00")
+		for _, prohibited := range []string{
+			"alt+g", "alt+u", "rewrite_key", "undo_key", "rewriteKey", "undoKey",
+			"TERM", "TERM_PROGRAM", "WT_SESSION", "TMUX", "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY",
+		} {
+			if strings.Contains(joined, prohibited) {
+				t.Fatalf("provider arguments %#v contained prohibited metadata %q", args, prohibited)
+			}
+		}
+	}
+}
+
 func TestAdapterFailuresDoNotExposePromptOutputOrStderr(t *testing.T) {
 	t.Parallel()
 	secret := "SECRET_PROVIDER_BOUNDARY_SENTINEL"

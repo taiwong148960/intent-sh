@@ -131,6 +131,13 @@ type runningShell struct {
 	respondTerminalQueries bool
 }
 
+type terminalPTYOptions struct {
+	term                   string
+	rows                   uint16
+	cols                   uint16
+	respondTerminalQueries bool
+}
+
 func startShell(t *testing.T, tc shellCase) *runningShell {
 	return startShellWith(t, tc, nil, "source "+shellQuote(tc.script))
 }
@@ -154,13 +161,26 @@ func startBashWithRCAndTerminalResponses(t *testing.T, tc shellCase, extraEnv ma
 }
 
 func startShellWithOptions(t *testing.T, tc shellCase, extraEnv map[string]string, initialize string, respondTerminalQueries bool) *runningShell {
+	return startShellWithPTYOptions(t, tc, extraEnv, initialize, terminalPTYOptions{respondTerminalQueries: respondTerminalQueries})
+}
+
+func startShellWithPTYOptions(t *testing.T, tc shellCase, extraEnv map[string]string, initialize string, options terminalPTYOptions) *runningShell {
 	t.Helper()
 	path, err := exec.LookPath(tc.executable)
 	if err != nil {
 		t.Skipf("%s is not installed", tc.executable)
 	}
 	cmd := exec.Command(path, tc.args...)
-	environment := map[string]string{"PS1": promptMarker, "PROMPT": promptMarker, "TERM": "dumb"}
+	if options.term == "" {
+		options.term = "dumb"
+	}
+	if options.rows == 0 {
+		options.rows = 40
+	}
+	if options.cols == 0 {
+		options.cols = 240
+	}
+	environment := map[string]string{"PS1": promptMarker, "PROMPT": promptMarker, "TERM": options.term}
 	for key, value := range extraEnv {
 		environment[key] = value
 	}
@@ -169,8 +189,8 @@ func startShellWithOptions(t *testing.T, tc shellCase, extraEnv map[string]strin
 	if err != nil {
 		t.Fatalf("start %s: %v", tc.name, err)
 	}
-	_ = pty.Setsize(file, &pty.Winsize{Rows: 40, Cols: 240})
-	shell := &runningShell{cmd: cmd, file: file, chunks: make(chan []byte, 32), readErr: make(chan error, 1), name: tc.name, respondTerminalQueries: respondTerminalQueries}
+	_ = pty.Setsize(file, &pty.Winsize{Rows: options.rows, Cols: options.cols})
+	shell := &runningShell{cmd: cmd, file: file, chunks: make(chan []byte, 32), readErr: make(chan error, 1), name: tc.name, respondTerminalQueries: options.respondTerminalQueries}
 	go shell.readLoop()
 	shell.readUntil(t, promptMarker)
 	if initialize != "" {
@@ -179,6 +199,13 @@ func startShellWithOptions(t *testing.T, tc shellCase, extraEnv map[string]strin
 		shell.readUntil(t, promptMarker)
 	}
 	return shell
+}
+
+func (s *runningShell) resize(t *testing.T, rows, cols uint16) {
+	t.Helper()
+	if err := pty.Setsize(s.file, &pty.Winsize{Rows: rows, Cols: cols}); err != nil {
+		t.Fatalf("resize PTY: %v", err)
+	}
 }
 
 func replaceEnvironment(source []string, replacements map[string]string) []string {

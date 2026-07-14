@@ -14,6 +14,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/taiwong148960/intent-sh/internal/apperr"
+	"github.com/taiwong148960/intent-sh/internal/keychord"
 	"github.com/taiwong148960/intent-sh/internal/textsafe"
 )
 
@@ -25,12 +26,14 @@ const (
 
 const maxConfigBytes = 64 * 1024
 
-// Config contains provider selection only; it deliberately has no credential fields.
+// Config contains only secret-free provider and local binding preferences.
 type Config struct {
 	Provider       string   `toml:"provider" json:"provider"`
 	Priority       []string `toml:"priority" json:"priority"`
 	TimeoutSeconds int      `toml:"timeout_seconds" json:"timeoutSeconds"`
 	Model          string   `toml:"model" json:"model"`
+	RewriteKey     string   `toml:"rewrite_key" json:"rewriteKey"`
+	UndoKey        string   `toml:"undo_key" json:"undoKey"`
 }
 
 func Defaults() Config {
@@ -39,6 +42,8 @@ func Defaults() Config {
 		Priority:       []string{ProviderClaude, ProviderCodex},
 		TimeoutSeconds: 30,
 		Model:          "",
+		RewriteKey:     "alt+g",
+		UndoKey:        "alt+u",
 	}
 }
 
@@ -85,7 +90,8 @@ func LoadAt(path string) (Config, error) {
 	if err := decoder.Decode(&cfg); err != nil {
 		return Config{}, apperr.Wrap(apperr.KindConfiguration, "load config", decodeMessage(err), err)
 	}
-	if err := cfg.Validate(); err != nil {
+	cfg, err = cfg.normalized()
+	if err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
@@ -115,29 +121,47 @@ func readBoundedConfigFile(path string) ([]byte, error) {
 }
 
 func (c Config) Validate() error {
+	_, err := c.normalized()
+	return err
+}
+
+func (c Config) normalized() (Config, error) {
 	if !validProviderMode(c.Provider) {
-		return apperr.New(apperr.KindConfiguration, "validate config", "provider must be one of auto, claude, or codex")
+		return Config{}, apperr.New(apperr.KindConfiguration, "validate config", "provider must be one of auto, claude, or codex")
 	}
 	if len(c.Priority) == 0 {
-		return apperr.New(apperr.KindConfiguration, "validate config", "priority must contain at least one provider")
+		return Config{}, apperr.New(apperr.KindConfiguration, "validate config", "priority must contain at least one provider")
 	}
 	seen := make(map[string]bool, len(c.Priority))
 	for _, provider := range c.Priority {
 		if provider != ProviderClaude && provider != ProviderCodex {
-			return apperr.New(apperr.KindConfiguration, "validate config", "priority contains an unknown provider; use only claude or codex")
+			return Config{}, apperr.New(apperr.KindConfiguration, "validate config", "priority contains an unknown provider; use only claude or codex")
 		}
 		if seen[provider] {
-			return apperr.New(apperr.KindConfiguration, "validate config", "priority contains a duplicate provider")
+			return Config{}, apperr.New(apperr.KindConfiguration, "validate config", "priority contains a duplicate provider")
 		}
 		seen[provider] = true
 	}
 	if c.TimeoutSeconds < 1 || c.TimeoutSeconds > 120 {
-		return apperr.New(apperr.KindConfiguration, "validate config", "timeout_seconds must be between 1 and 120")
+		return Config{}, apperr.New(apperr.KindConfiguration, "validate config", "timeout_seconds must be between 1 and 120")
 	}
 	if len(c.Model) > 200 || strings.ContainsAny(c.Model, "\x00\r\n") {
-		return apperr.New(apperr.KindConfiguration, "validate config", "model must be at most 200 characters on one line")
+		return Config{}, apperr.New(apperr.KindConfiguration, "validate config", "model must be at most 200 characters on one line")
 	}
-	return nil
+	rewrite, err := keychord.Parse(c.RewriteKey)
+	if err != nil {
+		return Config{}, apperr.New(apperr.KindConfiguration, "validate config", "rewrite_key is invalid: "+err.Error())
+	}
+	undo, err := keychord.Parse(c.UndoKey)
+	if err != nil {
+		return Config{}, apperr.New(apperr.KindConfiguration, "validate config", "undo_key is invalid: "+err.Error())
+	}
+	if rewrite == undo {
+		return Config{}, apperr.New(apperr.KindConfiguration, "validate config", "rewrite_key and undo_key must be distinct")
+	}
+	c.RewriteKey = rewrite.Canonical()
+	c.UndoKey = undo.Canonical()
+	return c, nil
 }
 
 func validProviderMode(value string) bool {
@@ -167,10 +191,15 @@ func SetAt(path, key, value string) (Config, error) {
 		cfg.TimeoutSeconds = n
 	case "model":
 		cfg.Model = value
+	case "rewrite_key":
+		cfg.RewriteKey = value
+	case "undo_key":
+		cfg.UndoKey = value
 	default:
-		return Config{}, apperr.New(apperr.KindConfiguration, "set config", "unknown configuration key; use provider, priority, timeout_seconds, or model")
+		return Config{}, apperr.New(apperr.KindConfiguration, "set config", "unknown configuration key; use provider, priority, timeout_seconds, model, rewrite_key, or undo_key")
 	}
-	if err := cfg.Validate(); err != nil {
+	cfg, err = cfg.normalized()
+	if err != nil {
 		return Config{}, err
 	}
 	if err := WriteAt(path, cfg); err != nil {
@@ -180,7 +209,9 @@ func SetAt(path, key, value string) (Config, error) {
 }
 
 func WriteAt(path string, cfg Config) error {
-	if err := cfg.Validate(); err != nil {
+	var err error
+	cfg, err = cfg.normalized()
+	if err != nil {
 		return err
 	}
 	data, err := toml.Marshal(cfg)
@@ -223,7 +254,9 @@ func WriteAt(path string, cfg Config) error {
 }
 
 func Marshal(cfg Config) ([]byte, error) {
-	if err := cfg.Validate(); err != nil {
+	var err error
+	cfg, err = cfg.normalized()
+	if err != nil {
 		return nil, err
 	}
 	data, err := toml.Marshal(cfg)

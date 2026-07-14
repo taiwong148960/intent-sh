@@ -1,14 +1,22 @@
 package contextinfo
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 func TestBuilderUsesOnlyAllowlistedSignals(t *testing.T) {
 	env := map[string]string{
 		"SSH_CONNECTION": "SECRET_REMOTE_ADDRESS",
+		"SSH_CLIENT":     "SECRET_SSH_CLIENT",
+		"SSH_TTY":        "SECRET_SSH_TTY",
+		"TERM":           "SECRET_TERM",
+		"TERM_PROGRAM":   "SECRET_TERM_PROGRAM",
+		"WT_SESSION":     "SECRET_WINDOWS_TERMINAL",
+		"TMUX":           "SECRET_TMUX_SOCKET",
 		"LC_ALL":         "en_US.UTF-8",
 		"DATABASE_URL":   "SECRET_DATABASE",
 		"API_TOKEN":      "SECRET_TOKEN",
@@ -38,6 +46,18 @@ func TestBuilderUsesOnlyAllowlistedSignals(t *testing.T) {
 	}
 	if got.CWD != "/Users/alice/project" || got.OS != "darwin" || got.Arch != "arm64" {
 		t.Fatalf("context = %#v", got)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{
+		"SECRET_REMOTE_ADDRESS", "SECRET_SSH_CLIENT", "SECRET_SSH_TTY", "SECRET_TERM",
+		"SECRET_TERM_PROGRAM", "SECRET_WINDOWS_TERMINAL", "SECRET_TMUX_SOCKET",
+	} {
+		if strings.Contains(string(encoded), secret) {
+			t.Fatalf("terminal or SSH marker %q reached model-visible context: %s", secret, encoded)
+		}
 	}
 }
 

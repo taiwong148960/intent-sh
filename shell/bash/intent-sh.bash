@@ -8,10 +8,22 @@ else
 __intent_sh_load_adapter() {
 
 __intent_sh_expected_blesh_version=0.4.0-nightly+d69e4d5
+__intent_sh_requested_rewrite_key=__INTENT_SH_REWRITE_CANONICAL__
+__intent_sh_requested_undo_key=__INTENT_SH_UNDO_CANONICAL__
+__intent_sh_requested_rewrite_binding='__INTENT_SH_REWRITE_BINDING__'
+__intent_sh_requested_undo_binding='__INTENT_SH_UNDO_BINDING__'
+[[ $__intent_sh_requested_rewrite_key == __INTENT_SH_""REWRITE_CANONICAL__ ]] && __intent_sh_requested_rewrite_key=alt+g
+[[ $__intent_sh_requested_undo_key == __INTENT_SH_""UNDO_CANONICAL__ ]] && __intent_sh_requested_undo_key=alt+u
+[[ $__intent_sh_requested_rewrite_binding == __INTENT_SH_""REWRITE_BINDING__ ]] && __intent_sh_requested_rewrite_binding='\x1b\x67'
+[[ $__intent_sh_requested_undo_binding == __INTENT_SH_""UNDO_BINDING__ ]] && __intent_sh_requested_undo_binding='\x1b\x75'
 
 if [[ -n ${__intent_sh_loaded-} ]]; then
     if [[ ${__intent_sh_protocol_version-} != 2 ]]; then
         printf 'intent-sh: loaded adapter protocol %s is incompatible with protocol 2\n' "${__intent_sh_protocol_version-unknown}" >&2
+        return 1 2>/dev/null || exit 1
+    fi
+    if [[ ${__intent_sh_rewrite_key-} != "$__intent_sh_requested_rewrite_key" || ${__intent_sh_undo_key-} != "$__intent_sh_requested_undo_key" ]]; then
+        printf 'intent-sh: different rewrite or undo bindings are already active; start a new shell before loading the new configuration\n' >&2
         return 1 2>/dev/null || exit 1
     fi
     if [[ ${INTENT_SH_ADAPTER_READY-} == 1 ]]; then
@@ -20,6 +32,8 @@ if [[ -n ${__intent_sh_loaded-} ]]; then
 fi
 
 __intent_sh_protocol_version=2
+__intent_sh_rewrite_key=$__intent_sh_requested_rewrite_key
+__intent_sh_undo_key=$__intent_sh_requested_undo_key
 __intent_sh_editor_backend=
 __intent_sh_editor_version=
 __intent_sh_blesh_keymap=
@@ -46,6 +60,9 @@ __intent_sh_set_status() {
     export INTENT_SH_ADAPTER_PROTOCOL INTENT_SH_ADAPTER_BACKEND
     export INTENT_SH_ADAPTER_EDITOR_VERSION INTENT_SH_ADAPTER_READY
     export INTENT_SH_ADAPTER_FAILURE INTENT_SH_ADAPTER_CONFLICTS
+    INTENT_SH_ADAPTER_REWRITE_KEY=$__intent_sh_rewrite_key
+    INTENT_SH_ADAPTER_UNDO_KEY=$__intent_sh_undo_key
+    export INTENT_SH_ADAPTER_REWRITE_KEY INTENT_SH_ADAPTER_UNDO_KEY
 }
 
 __intent_sh_fail_initialization() {
@@ -687,8 +704,8 @@ __intent_sh_initialize_blesh() {
 __intent_sh_initialize_readline() {
     __intent_sh_editor_backend=readline
     __intent_sh_editor_version=$BASH_VERSION
-    bind -x '"\eg":__intent_sh_rewrite'
-    bind -x '"\eu":__intent_sh_undo'
+    bind -x "\"$__intent_sh_requested_rewrite_binding\":__intent_sh_rewrite"
+    bind -x "\"$__intent_sh_requested_undo_binding\":__intent_sh_undo"
     bind -x '"\C-]":__intent_sh_accept_guard'
     bind -x '"\C-^":__intent_sh_noop'
     bind '"\C-m":"\C-]\C-^"'
@@ -707,6 +724,11 @@ __intent_sh_initialize() {
     fi
 
     if [[ ${BLE_ATTACHED-} == 1 ]]; then
+        if [[ $__intent_sh_rewrite_key != alt+g || $__intent_sh_undo_key != alt+u ]]; then
+            __intent_sh_fail_initialization blesh "${BLE_VERSION-unknown}" unsupported_binding "" \
+                "custom rewrite and undo bindings currently require native Bash 4+ Readline or Zsh; the existing ble.sh contract keeps Alt+G and Alt+U"
+            return 1
+        fi
         if [[ ${BLE_VERSION-} != "$__intent_sh_expected_blesh_version" ]]; then
             __intent_sh_fail_initialization blesh unsupported incompatible_version "" \
                 "attached ble.sh is untested; load $__intent_sh_expected_blesh_version before intent-sh"

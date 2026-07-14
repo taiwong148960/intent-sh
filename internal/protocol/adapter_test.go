@@ -90,6 +90,30 @@ func TestAdapterRequestJSONIncludesEditorMetadata(t *testing.T) {
 	}
 }
 
+func TestAdapterRequestFrameExcludesBindingAndTerminalMetadata(t *testing.T) {
+	t.Parallel()
+	req := AdapterRequest{
+		Version: AdapterVersion, Action: ActionRewrite, Shell: "zsh", ShellVersion: "5.9",
+		EditorBackend: EditorBackendZLE, EditorVersion: "5.9", Buffer: "pwd", Cursor: 3, RequestID: "privacy-1",
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frame bytes.Buffer
+	if err := EncodeRequest(&frame, req); err != nil {
+		t.Fatal(err)
+	}
+	for _, prohibited := range []string{
+		"rewriteKey", "undoKey", "rewrite_key", "undo_key",
+		"TERM", "TERM_PROGRAM", "WT_SESSION", "TMUX", "SSH_CONNECTION",
+	} {
+		if strings.Contains(string(data), prohibited) || strings.Contains(frame.String(), prohibited) {
+			t.Fatalf("adapter boundary contained prohibited metadata %q: json=%s frame=%q", prohibited, data, frame.Bytes())
+		}
+	}
+}
+
 func TestUTF8CursorConversionAndValidation(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -48,6 +48,10 @@ printf 'invoked\n' >> "$HOME/codex-invoked"
 prompt=$(cat)
 printf '%s' "$prompt" > "$HOME/codex-last-prompt"
 case "$prompt" in
+	*INTENT_CASE_RESIZE_7Q*)
+		sleep 1
+		printf '%s' '{"status":"ok","command":"printf RESIZED","explanation":"resize result","assumptions":[],"riskHint":"safe"}' > "$result"
+		;;
     *INTENT_CASE_SLOW_7Q*)
         sleep 10
         printf '%s' '{"status":"ok","command":"printf SLOW","explanation":"slow result","assumptions":[],"riskHint":"safe"}' > "$result"
@@ -95,7 +99,10 @@ if [ -n "${DATABASE_URL-}" ] || [ -n "${INTENT_PRIVATE_SENTINEL-}" ] || [ -n "${
 fi
 case "$prompt" in
     *INTENT_CASE_CLAUDE_SLOW_7Q*)
-        sleep 10
+		sleep 10 &
+		child_pid=$!
+		printf '%s %s\n' "$$" "$child_pid" > "$HOME/claude-provider-pid"
+		wait "$child_pid"
         printf '%s' '{"is_error":false,"structured_output":{"status":"ok","command":"printf CLAUDE_SLOW","explanation":"slow Claude result","assumptions":[],"riskHint":"safe"}}'
         ;;
     *INTENT_CASE_FALLBACK_7Q*)
@@ -109,7 +116,7 @@ case "$prompt" in
         ;;
     *INTENT_CASE_CLAUDE_SAFE_7Q*)
         case "$prompt" in
-            *'"original":"prefix-INTENT_CASE_CLAUDE_SAFE_7Q"'*'"previous":"printf CLAUDE_ONE"'*'"generationIndex":1'*)
+            *'"previous":"printf CLAUDE_ONE"'*'"generationIndex":1'*)
                 printf '%s' '{"is_error":false,"structured_output":{"status":"ok","command":"printf CLAUDE_TWO","explanation":"Claude generated two","assumptions":[],"riskHint":"safe"}}'
                 ;;
             *'"generationIndex":1'*)

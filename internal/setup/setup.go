@@ -3,6 +3,7 @@ package setup
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/taiwong148960/intent-sh/internal/apperr"
+	"github.com/taiwong148960/intent-sh/internal/keychord"
 	"github.com/taiwong148960/intent-sh/internal/protocol"
 )
 
@@ -40,6 +42,8 @@ type Plan struct {
 	StartupFile            string
 	Activation             string
 	Bindings               []string
+	RewriteKey             string
+	UndoKey                string
 	Conflicts              []Conflict
 	BleshVersion           string
 	BleshCommit            string
@@ -59,21 +63,33 @@ type Options struct {
 // InspectDefault inspects the current user's likely startup file without
 // changing it or executing any of its contents.
 func InspectDefault(shell string) (Plan, error) {
+	return InspectDefaultWithBindings(shell, "alt+g", "alt+u")
+}
+
+// InspectDefaultWithBindings inspects the startup file for the effective
+// validated native ZLE/Readline bindings.
+func InspectDefaultWithBindings(shell, rewriteValue, undoValue string) (Plan, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return Plan{}, apperr.Wrap(apperr.KindConfiguration, "prepare setup", "could not determine the home directory", err)
 	}
-	return Inspect(shell, Options{
+	return InspectWithBindings(shell, Options{
 		Home:        home,
 		ZDOTDIR:     os.Getenv("ZDOTDIR"),
 		GOOS:        runtime.GOOS,
 		Exists:      regularFileExists,
 		ReadBounded: readBoundedRegularFile,
-	})
+	}, rewriteValue, undoValue)
 }
 
 // Inspect selects a likely startup file and detects static keybinding conflicts.
 func Inspect(shell string, options Options) (Plan, error) {
+	return InspectWithBindings(shell, options, "alt+g", "alt+u")
+}
+
+// InspectWithBindings selects a likely startup file and detects static
+// conflicts for the effective native bindings.
+func InspectWithBindings(shell string, options Options, rewriteValue, undoValue string) (Plan, error) {
 	if shell != ShellBash && shell != ShellZsh {
 		return Plan{}, apperr.New(apperr.KindInvalidInput, "prepare setup", "supported shells are zsh and bash")
 	}
@@ -89,13 +105,26 @@ func Inspect(shell string, options Options) (Plan, error) {
 	if options.ReadBounded == nil {
 		options.ReadBounded = readBoundedRegularFile
 	}
+	rewrite, err := keychord.Parse(rewriteValue)
+	if err != nil {
+		return Plan{}, apperr.New(apperr.KindConfiguration, "prepare setup", "rewrite_key is invalid: "+err.Error())
+	}
+	undo, err := keychord.Parse(undoValue)
+	if err != nil {
+		return Plan{}, apperr.New(apperr.KindConfiguration, "prepare setup", "undo_key is invalid: "+err.Error())
+	}
+	if rewrite == undo {
+		return Plan{}, apperr.New(apperr.KindConfiguration, "prepare setup", "rewrite_key and undo_key must be distinct")
+	}
 
 	plan := Plan{
 		Shell:      shell,
 		Activation: `eval "$(intent-sh init ` + shell + `)"`,
+		RewriteKey: rewrite.Canonical(),
+		UndoKey:    undo.Canonical(),
 		Bindings: []string{
-			"Alt+G: rewrite the current buffer; press again to regenerate",
-			"Alt+U: restore the original buffer when it is still unchanged",
+			rewrite.Display() + ": rewrite the current buffer; press again to regenerate",
+			undo.Display() + ": restore the original buffer when it is still unchanged",
 			"Enter: normal acceptance, with a two-Enter guard for dangerous generated commands",
 			"Ctrl+C: cancel an in-progress rewrite",
 		},
@@ -115,7 +144,7 @@ func Inspect(shell string, options Options) (Plan, error) {
 		return Plan{}, apperr.Wrap(apperr.KindConfiguration, "inspect shell setup", "could not safely inspect the shell startup file", err)
 	}
 	content := string(data)
-	plan.Conflicts = detectConflicts(shell, content)
+	plan.Conflicts = detectConflicts(shell, content, rewrite, undo)
 	if shell == ShellBash {
 		plan.BleshLoadOrderConflict = detectBleshLoadOrderConflict(content)
 	}
@@ -146,15 +175,15 @@ func startupFile(shell string, options Options) string {
 	return filepath.Join(options.Home, defaultName)
 }
 
-func detectConflicts(shell, content string) []Conflict {
+func detectConflicts(shell, content string, rewrite, undo keychord.Chord) []Conflict {
 	nativeKeys := []struct {
 		name     string
 		patterns []string
 	}{
-		{name: "Alt+G", patterns: []string{"^[g", `\\eg`, `\\eG`}},
-		{name: "Alt+U", patterns: []string{"^[u", `\\eu`, `\\eU`}},
-		{name: "Enter (CR)", patterns: []string{"^M", `\\C-m`, `\\C-M`}},
-		{name: "Enter (LF)", patterns: []string{"^J", `\\C-j`, `\\C-J`}},
+		{name: rewrite.Display(), patterns: bindingPatterns(rewrite)},
+		{name: undo.Display(), patterns: bindingPatterns(undo)},
+		{name: "Enter (CR)", patterns: []string{"^M", `\C-m`, `\C-M`, `\\C-m`, `\\C-M`, `\x0d`, `\\x0d`}},
+		{name: "Enter (LF)", patterns: []string{"^J", `\C-j`, `\C-J`, `\\C-j`, `\\C-J`, `\x0a`, `\\x0a`}},
 	}
 	bleshKeys := []struct {
 		name string
@@ -220,6 +249,27 @@ func detectConflicts(shell, content string) []Conflict {
 		conflicts = append(conflicts, Conflict{Backend: ConflictBackendBlesh, Key: "accept-line"})
 	}
 	return conflicts
+}
+
+func bindingPatterns(chord keychord.Chord) []string {
+	key := chord.Key()
+	hex := chord.ZLEBinding()
+	patterns := []string{hex, strings.ReplaceAll(hex, `\`, `\\`)}
+	if chord.Modifier() == keychord.ModifierAlt {
+		patterns = append(patterns,
+			"^["+string(key),
+			`\e`+string(key), `\\e`+string(key),
+			`\M-`+string(key), `\\M-`+string(key),
+		)
+	} else {
+		upper := strings.ToUpper(string(key))
+		patterns = append(patterns,
+			"^"+upper,
+			fmt.Sprintf(`\C-%c`, key), fmt.Sprintf(`\C-%s`, upper),
+			fmt.Sprintf(`\\C-%c`, key), fmt.Sprintf(`\\C-%s`, upper),
+		)
+	}
+	return patterns
 }
 
 func containsBashBind(line string) bool {

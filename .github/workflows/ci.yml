@@ -32,18 +32,18 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Install Zsh on Ubuntu
+      - name: Install Zsh and tmux on Ubuntu
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes zsh
+        run: sudo apt-get update && sudo apt-get install --yes zsh tmux
 
       - name: Select modern Bash on Ubuntu
         if: runner.os == 'Linux'
         run: echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
 
-      - name: Install and select modern Bash on macOS
+      - name: Install tmux and select modern Bash on macOS
         if: runner.os == 'macOS'
         run: |
-          brew install bash
+          brew install bash tmux
           echo "INTENT_SH_TEST_BASH=$(brew --prefix)/bin/bash" >> "$GITHUB_ENV"
 
       - name: Check formatting
@@ -57,6 +57,12 @@ jobs:
 
       - name: Run unit, fake-provider, and PTY suites
         run: go test ./... -count=1
+
+      - name: Run isolated tmux qualification explicitly
+        run: make tmux-test
+
+      - name: Verify SSH qualification remains opt-in
+        run: env -u INTENT_SH_TEST_SSH_TARGET go test ./internal/shelltest -run '^TestSSH' -count=1 -v
 
       - name: Prove stock macOS Bash 3.2 fails closed without ble.sh
         if: runner.os == 'macOS'

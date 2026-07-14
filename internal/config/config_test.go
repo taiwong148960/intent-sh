@@ -37,6 +37,35 @@ func TestLoadAtMissingUsesDefaultsWithoutCreating(t *testing.T) {
 	}
 }
 
+func TestBindingDefaultsAndCanonicalization(t *testing.T) {
+	t.Parallel()
+	defaults := Defaults()
+	if defaults.RewriteKey != "alt+g" || defaults.UndoKey != "alt+u" {
+		t.Fatalf("binding defaults = %q/%q", defaults.RewriteKey, defaults.UndoKey)
+	}
+
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("rewrite_key = \"CTRL+X\"\nundo_key = \"ALT+'\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RewriteKey != "ctrl+x" || cfg.UndoKey != "alt+'" {
+		t.Fatalf("canonical bindings = %q/%q", cfg.RewriteKey, cfg.UndoKey)
+	}
+	data, err := Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`rewrite_key = 'ctrl+x'`, `undo_key = "alt+'"`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("canonical config %q omitted %q", data, want)
+		}
+	}
+}
+
 func TestLoadAtPartialAndStrict(t *testing.T) {
 	dir := t.TempDir()
 	partial := filepath.Join(dir, "partial.toml")
@@ -71,6 +100,10 @@ func TestValidateTable(t *testing.T) {
 		{"small timeout", func(c *Config) { c.TimeoutSeconds = 0 }},
 		{"large timeout", func(c *Config) { c.TimeoutSeconds = 121 }},
 		{"multiline model", func(c *Config) { c.Model = "one\ntwo" }},
+		{"malformed rewrite", func(c *Config) { c.RewriteKey = "meta+g" }},
+		{"reserved rewrite", func(c *Config) { c.RewriteKey = "ctrl+c" }},
+		{"malformed undo", func(c *Config) { c.UndoKey = "alt+gg" }},
+		{"duplicate bindings", func(c *Config) { c.UndoKey = "ALT+G" }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -119,6 +152,42 @@ func TestSetAtPriorityAndTimeout(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.Priority, []string{"codex", "claude"}) || cfg.TimeoutSeconds != 45 {
 		t.Fatalf("config = %#v", cfg)
+	}
+}
+
+func TestSetAtBindingsIsCanonicalAndAtomic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cfg, err := SetAt(path, "rewrite_key", "CTRL+X")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RewriteKey != "ctrl+x" {
+		t.Fatalf("rewrite key = %q", cfg.RewriteKey)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []struct {
+		key   string
+		value string
+		field string
+	}{
+		{key: "rewrite_key", value: "ctrl+c", field: "rewrite_key"},
+		{key: "undo_key", value: "CTRL+X", field: "rewrite_key and undo_key"},
+		{key: "undo_key", value: "alt+é", field: "undo_key"},
+	} {
+		_, setErr := SetAt(path, invalid.key, invalid.value)
+		if setErr == nil || !strings.Contains(setErr.Error(), invalid.field) {
+			t.Fatalf("SetAt(%q, %q) error = %v", invalid.key, invalid.value, setErr)
+		}
+		after, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if !reflect.DeepEqual(after, before) {
+			t.Fatalf("invalid update changed config:\nbefore=%q\nafter=%q", before, after)
+		}
 	}
 }
 

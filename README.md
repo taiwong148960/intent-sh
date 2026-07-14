@@ -2,7 +2,7 @@
 
 `intent-sh` turns the editable text at your shell prompt into one validated command. It works inside Zsh, modern Bash, and stock macOS Bash 3.2 when the exact tested ble.sh editor is attached. It reuses an already authenticated Claude Code or Codex CLI and leaves the generated command in the buffer for you to inspect. It never presses Enter or executes the command for you.
 
-This repository is an MVP. Its local safety checks reduce accidental risk; they are not a sandbox or a guarantee that a command is harmless.
+This repository is an MVP. Its local safety checks reduce accidental risk; they are not a sandbox or a guarantee that a command is harmless. Terminal support is behavioral: a terminal is **contract-compatible** when it satisfies the PTY contract below, and a named environment is **qualified** only when it has a dated result in [the terminal qualification record](docs/terminal-qualification-results.md).
 
 ## Compatibility
 
@@ -17,6 +17,10 @@ This repository is an MVP. Its local safety checks reduce accidental risk; they 
 | Provider | At least one compatible, logged-in official Claude Code or Codex CLI |
 
 Windows, WSL, Fish, PowerShell, and other shells are outside the MVP compatibility contract.
+
+For the native ZLE and Bash 4.0+ Readline paths, a contract-compatible terminal environment must provide an interactive controlling PTY, deliver the configured rewrite and undo sequences plus CR or LF and `Ctrl+C`, support ordinary shell-editor repaint and resize, and keep the shell process alive for any claimed tmux reattach journey. `intent-sh` never selects code by terminal brand, `TERM`, `TERM_PROGRAM`, tmux, or SSH client identity. The existing Bash 3.2 ble.sh path remains separately qualified with fixed `Alt+G`/`Alt+U` bindings; configurable chords and `doctor --keys` qualification apply to native ZLE/Readline only.
+
+Named terminal applications are not inferred to be qualified merely because they allocate a PTY. Follow [the terminal qualification guide](docs/terminal-qualification.md) and consult the dated record before making a named support claim.
 
 ## Quick start
 
@@ -86,6 +90,14 @@ intent-sh doctor
 
 Doctor prints stable `PASS`, `WARN`, `FAIL`, and `SKIP` check IDs for the platform, architecture, shell version, active editor backend, adapter protocol, config, static and runtime key conflicts, provider executable, compatible features, and official login readiness. When ble.sh is selected it separately reports its exact version, required APIs, attachment, and load order. Ready Bash 3.2 passes only when the adapter reports the tested `blesh` backend; missing ble.sh and impossible native Readline reports fail actionably. Doctor never sources startup files and never prints buffers, generated commands, binding bodies, tokens, or credential-file contents.
 
+To test actual key delivery from the controlling terminal without invoking a provider, run the explicit interactive mode and press the four requested keys:
+
+```sh
+intent-sh doctor --keys
+```
+
+The probe temporarily opens `/dev/tty` in bounded raw mode, checks the configured rewrite and undo chords, Enter (CR or LF), and `Ctrl+C`, then restores the original mode on success, mismatch, timeout, cancellation, or read failure. It does not consume piped stdin. A failure means a terminal, tmux layer, or shell mapping intercepted or transformed a sequence; it does not change that mapping for you.
+
 ### 5. Try a harmless rewrite
 
 At a fresh shell prompt, type a plain-language intent but do not press Enter:
@@ -94,13 +106,13 @@ At a fresh shell prompt, type a plain-language intent but do not press Enter:
 show the current directory
 ```
 
-Press `Alt+G`. A successful request replaces the full editable line with one command, such as `pwd`, and moves the cursor to the end. Read the command first. It has not run. Press Enter only if you want your shell to accept it.
+Press the configured rewrite chord (`Alt+G` by default). A successful request replaces the full editable line with one command, such as `pwd`, and moves the cursor to the end. Read the command first. It has not run. Press Enter only if you want your shell to accept it.
 
 ## Editing workflow
 
-- `Alt+G` rewrites the complete current buffer.
-- `Alt+G` again, while the generated command is unchanged, requests a different alternative from the preserved original intent.
-- `Alt+U` restores the original buffer only while the generated command is unchanged. It will not overwrite manual edits.
+- The configured rewrite chord (`Alt+G` by default) rewrites the complete current buffer.
+- The rewrite chord again, while the generated command is unchanged, requests a different alternative from the preserved original intent.
+- The configured undo chord (`Alt+U` by default) restores the original buffer only while the generated command is unchanged. It will not overwrite manual edits.
 - `Ctrl+C` during “generating” cancels the provider process tree, stops fallback, and keeps the original buffer.
 - Editing a generated command makes it ordinary user-owned shell input, starts a new rewrite chain at the next adapter action, and clears any detected dangerous-command confirmation state.
 
@@ -130,7 +142,7 @@ The optional secret-free config lives at:
 ${XDG_CONFIG_HOME:-$HOME/.config}/intent-sh/config.toml
 ```
 
-No file is created until `config set` is used. Defaults are auto routing, Claude then Codex priority, a 30-second timeout, and no forced model.
+No file is created until `config set` is used. Defaults are auto routing, Claude then Codex priority, a 30-second timeout, no forced model, rewrite `alt+g`, and undo `alt+u`.
 
 ```sh
 intent-sh config path
@@ -140,9 +152,32 @@ intent-sh config set provider auto
 intent-sh config set priority codex,claude
 intent-sh config set timeout_seconds 45
 intent-sh config set model '<provider-supported-model>'
+intent-sh config set rewrite_key ctrl+x
+intent-sh config set undo_key alt+u
 ```
 
-Supported keys are `provider`, `priority`, `timeout_seconds`, and `model`. Credential fields and unknown keys are rejected. In `auto` mode, providers are attempted sequentially in priority order; cancellation never falls back. Selecting `claude` or `codex` explicitly disables fallback.
+Supported config keys are `provider`, `priority`, `timeout_seconds`, `model`, `rewrite_key`, and `undo_key`. Credential fields and unknown keys are rejected. In `auto` mode, providers are attempted sequentially in priority order; cancellation never falls back. Selecting `claude` or `codex` explicitly disables fallback.
+
+Binding values are canonical lowercase `alt+<key>` or `ctrl+<letter>` strings. `alt+` accepts exactly one non-whitespace printable ASCII character. `ctrl+` accepts one ASCII letter except `c`, `d`, `j`, `m`, `q`, `s`, `y`, and `z`, which are reserved for cancellation, EOF, Enter, flow control, or suspension. Shift, Command/Super, function keys, non-ASCII keys, raw escapes, whitespace, and multi-key sequences are not supported. Rewrite and undo must be distinct.
+
+After changing a chord, run `intent-sh setup bash|zsh`, open a new shell, and run `intent-sh doctor --keys`. An already initialized adapter refuses a different pair so it cannot leave stale bindings active. Restore the defaults with:
+
+```sh
+intent-sh config set rewrite_key alt+g
+intent-sh config set undo_key alt+u
+```
+
+If a terminal or tmux binding intercepts an Alt chord, either change that external binding manually or choose an allowed Ctrl alternative. `intent-sh` never edits terminal or tmux settings. Custom chords require native ZLE or Bash 4.0+ Readline; the optional ble.sh compatibility path retains fixed `Alt+G`/`Alt+U` behavior.
+
+## tmux and SSH
+
+tmux needs no `intent-sh` plugin. When the outer terminal and tmux deliver the configured bytes, the adapter behaves as it does on a direct PTY. Rewrite, undo, and dangerous-confirmation state live only in the shell process, so they survive detach/reattach to that same live pane and are not shared with another pane or session. `intent-sh` never runs `capture-pane`, reads scrollback, or modifies tmux configuration.
+
+If `doctor --keys` fails only inside tmux, inspect root-table bindings such as `tmux list-keys -T root` yourself. Remove or remap the conflicting tmux binding in your own configuration, or set a different allowed `intent-sh` chord and start a new shell. The repository's automated tmux suite uses a private `-L` server and an empty config; it never contacts the user's normal server. Detailed checks are in [the terminal qualification guide](docs/terminal-qualification.md).
+
+Inside SSH, everything that serves the rewrite is remote: the shell adapter, `intent-sh` binary, provider CLI, provider login, current directory, provider process, and generated target command. A provider installed or authenticated only on the client cannot serve the remote shell, and `intent-sh` does not forward provider credentials or requests to a client service. Remote model context contains only `remote: true`; SSH marker values and client terminal identity are excluded.
+
+Losing a plain SSH connection normally terminates or hangs up that remote shell, so no recovery is promised. If the remote shell remains alive in remote tmux, reconnect and reattach to that same pane; surviving state belongs to that remote shell and requires no client-local state. The client and remote host need no shared `intent-sh` files beyond the ordinary terminal byte stream.
 
 ## Exactly what providers receive
 
@@ -163,6 +198,7 @@ Because the active buffer is intentionally sent, do not request a rewrite while 
 
 - shell history;
 - terminal output, scrollback, or screen contents;
+- terminal application identity, version, selections, or tmux pane contents;
 - arbitrary environment variables or SSH marker values;
 - project/repository file contents, `.env` files, or Git diffs;
 - clipboard data;
@@ -193,7 +229,7 @@ You are not trusting `intent-sh` with provider credentials, automatic command ex
 - selected-text rewriting, terminal-screen scraping, clipboard access, or global keystroke simulation;
 - reading project files, history, terminal output, or Git state to enrich prompts;
 - a desktop UI, daemon, database, telemetry, persistent logs, or command-history store;
-- configurable shortcuts, command explanations as a separate product surface, or a general shell sandbox.
+- arbitrary raw-byte or multi-stroke shortcuts, command explanations as a separate product surface, or a general shell sandbox.
 
 ## Removal
 
@@ -224,7 +260,7 @@ If you use ble.sh, removing the `intent-sh` activation line disables only this i
 
 The current embedded adapters and binary use adapter protocol 2. It adds explicit editor-backend/version fields and standardizes cursor positions as UTF-8 byte offsets. After upgrading, open a new shell or re-evaluate the `intent-sh init` line so the running adapter comes from the same binary. An old protocol-1 adapter paired with a protocol-2 binary—or the reverse—fails closed before a provider call or buffer replacement.
 
-To roll back, install the earlier binary and re-evaluate the adapter emitted by that binary. Removing the activation line is the complete integration rollback. Neither path changes the user's login shell, provider login, or independently managed ble.sh installation.
+To roll back, first remove `rewrite_key` and `undo_key` from the strict TOML file if the older binary predates those keys; otherwise it will correctly reject the now-unknown fields. Then install the earlier binary and re-evaluate the adapter emitted by that binary in a new shell. Removing the activation line is the complete integration rollback. Neither path changes the user's login shell, terminal/tmux settings, provider login, or independently managed ble.sh installation.
 
 ## Development
 
@@ -244,6 +280,20 @@ go test ./internal/shelltest -run Blesh -count=1 -v
 ```
 
 CI verifies the pinned archive checksum and caches the built test artifact. The suite covers stock macOS Bash 3.2, modern Bash with both native Readline and ble.sh, and fail-closed Bash 3.2 behavior when the dependency is missing or incompatible.
+
+The isolated tmux suite requires tmux locally and never uses the default server:
+
+```sh
+make tmux-test
+```
+
+The SSH smoke suite is deliberately opt-in. The target must already be reachable with non-interactive SSH authentication and a known host key; the harness creates no credential or package installation. It stages and removes only a private temporary test bundle:
+
+```sh
+INTENT_SH_TEST_SSH_TARGET=user@prepared-host make ssh-test
+```
+
+See [the terminal qualification guide](docs/terminal-qualification.md) for prerequisites, the remote tmux reattach journey, and the bounded evidence template.
 
 Real provider checks are deliberately opt-in; see the [provider compatibility record](docs/provider-compatibility.md).
 

@@ -19,6 +19,7 @@ import (
 
 	"github.com/taiwong148960/intent-sh/internal/apperr"
 	"github.com/taiwong148960/intent-sh/internal/config"
+	"github.com/taiwong148960/intent-sh/internal/keyprobe"
 	"github.com/taiwong148960/intent-sh/internal/protocol"
 	"github.com/taiwong148960/intent-sh/internal/provider"
 	setupguide "github.com/taiwong148960/intent-sh/internal/setup"
@@ -75,9 +76,13 @@ type Dependencies struct {
 	CheckProtocol func() error
 	AdapterStatus func() AdapterStatus
 	InspectSetup  func(string) (setupguide.Plan, error)
-	LookPath      func(string) (string, error)
-	ShellVersion  func(context.Context, string) (string, error)
-	Providers     map[string]provider.Provider
+	// InspectSetupBindings is the production seam for effective configured
+	// bindings. InspectSetup remains for focused legacy tests.
+	InspectSetupBindings func(string, string, string) (setupguide.Plan, error)
+	KeyProbe             func(context.Context, string, string) keyprobe.Result
+	LookPath             func(string) (string, error)
+	ShellVersion         func(context.Context, string) (string, error)
+	Providers            map[string]provider.Provider
 }
 
 // Runner executes a configured doctor inspection.
@@ -88,20 +93,47 @@ type Runner struct {
 // NewDefault creates the production read-only diagnostic runner.
 func NewDefault() Runner {
 	return Runner{Dependencies: Dependencies{
-		GOOS:          runtime.GOOS,
-		GOARCH:        runtime.GOARCH,
-		ShellPath:     os.Getenv("SHELL"),
-		LoadConfig:    config.Load,
-		CheckProtocol: defaultProtocolCheck,
-		AdapterStatus: inspectAdapterStatus,
-		InspectSetup:  setupguide.InspectDefault,
-		LookPath:      exec.LookPath,
-		ShellVersion:  inspectShellVersion,
+		GOOS:                 runtime.GOOS,
+		GOARCH:               runtime.GOARCH,
+		ShellPath:            os.Getenv("SHELL"),
+		LoadConfig:           config.Load,
+		CheckProtocol:        defaultProtocolCheck,
+		AdapterStatus:        inspectAdapterStatus,
+		InspectSetupBindings: setupguide.InspectDefaultWithBindings,
+		KeyProbe: func(ctx context.Context, rewriteKey, undoKey string) keyprobe.Result {
+			return (keyprobe.Probe{}).Run(ctx, rewriteKey, undoKey)
+		},
+		LookPath:     exec.LookPath,
+		ShellVersion: inspectShellVersion,
 		Providers: map[string]provider.Provider{
 			provider.NameClaude: provider.Claude{},
 			provider.NameCodex:  provider.Codex{},
 		},
 	}}
+}
+
+// RunKeys performs ordinary non-interactive readiness checks and then the
+// explicit bounded controlling-terminal key probe.
+func (runner Runner) RunKeys(ctx context.Context) Report {
+	report := runner.Run(ctx)
+	deps := withDefaults(runner.Dependencies)
+	cfg, _, configErr := deps.LoadConfig()
+	result := deps.KeyProbe(ctx, cfg.RewriteKey, cfg.UndoKey)
+	for _, check := range result.Checks {
+		status := StatusFail
+		switch check.Status {
+		case keyprobe.StatusPass:
+			status = StatusPass
+		case keyprobe.StatusSkip:
+			status = StatusSkip
+		}
+		report.add(status, check.ID, check.Detail, check.Guidance)
+	}
+	if configErr != nil || !result.Ready {
+		report.Ready = false
+		setFailureKind(&report, apperr.KindConfiguration)
+	}
+	return report
 }
 
 // Run performs all checks and never includes raw subprocess errors in a Check.
@@ -152,7 +184,13 @@ func (runner Runner) Run(ctx context.Context) Report {
 	if shellName == "" {
 		report.add(StatusSkip, "shell.default_keys", "key conflicts were not inspected", "Select Zsh or Bash, then run doctor again.")
 	} else {
-		plan, err := deps.InspectSetup(shellName)
+		var plan setupguide.Plan
+		var err error
+		if deps.InspectSetupBindings != nil {
+			plan, err = deps.InspectSetupBindings(shellName, cfg.RewriteKey, cfg.UndoKey)
+		} else {
+			plan, err = deps.InspectSetup(shellName)
+		}
 		if err != nil {
 			report.add(StatusFail, "shell.default_keys", "startup-file keybindings could not be safely inspected", "Inspect the startup file manually before activation.")
 			coreReady = false
@@ -165,7 +203,7 @@ func (runner Runner) Run(ctx context.Context) Report {
 			setFailureKind(&report, apperr.KindConfiguration)
 		} else {
 			setupReady = true
-			report.add(StatusPass, "shell.default_keys", "no static conflicts found for Alt+G, Alt+U, or Enter", "")
+			report.add(StatusPass, "shell.default_keys", "no static conflicts found for "+plan.RewriteKey+", "+plan.UndoKey+", or Enter", "")
 		}
 	}
 
@@ -236,8 +274,11 @@ func withDefaults(deps Dependencies) Dependencies {
 	if deps.AdapterStatus == nil {
 		deps.AdapterStatus = defaults.AdapterStatus
 	}
-	if deps.InspectSetup == nil {
-		deps.InspectSetup = defaults.InspectSetup
+	if deps.InspectSetup == nil && deps.InspectSetupBindings == nil {
+		deps.InspectSetupBindings = defaults.InspectSetupBindings
+	}
+	if deps.KeyProbe == nil {
+		deps.KeyProbe = defaults.KeyProbe
 	}
 	if deps.LookPath == nil {
 		deps.LookPath = defaults.LookPath

@@ -30,6 +30,10 @@ type DoctorRunner interface {
 	Run(context.Context) doctor.Report
 }
 
+type DoctorKeysRunner interface {
+	RunKeys(context.Context) doctor.Report
+}
+
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return RunContext(context.Background(), args, stdin, stdout, stderr)
 }
@@ -98,7 +102,12 @@ func runInit(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		return invalidUsage(stderr)
 	}
-	script, err := shellassets.Script(args[0], protocol.AdapterVersion)
+	cfg, _, err := config.Load()
+	if err != nil {
+		writeError(stderr, err)
+		return apperr.ExitCode(err)
+	}
+	script, err := shellassets.ScriptWithBindings(args[0], protocol.AdapterVersion, cfg.RewriteKey, cfg.UndoKey)
 	if err != nil {
 		writeError(stderr, err)
 		return apperr.ExitCode(err)
@@ -173,21 +182,31 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 || args[0] != "bash" && args[0] != "zsh" {
 		return invalidUsage(stderr)
 	}
-	plan, err := setupguide.InspectDefault(args[0])
+	cfg, _, err := config.Load()
 	if err != nil {
 		writeError(stderr, err)
 		return apperr.ExitCode(err)
 	}
-	fmt.Fprintf(stdout, "Shell: %s\nStartup file: %s\n\nAdd this idempotent activation line:\n%s\n\nDefault bindings:\n", plan.Shell, textsafe.Terminal(plan.StartupFile, 4096), plan.Activation)
+	plan, err := setupguide.InspectDefaultWithBindings(args[0], cfg.RewriteKey, cfg.UndoKey)
+	if err != nil {
+		writeError(stderr, err)
+		return apperr.ExitCode(err)
+	}
+	fmt.Fprintf(stdout, "Shell: %s\nStartup file: %s\n\nAdd this idempotent activation line:\n%s\n\nEffective bindings:\n", plan.Shell, textsafe.Terminal(plan.StartupFile, 4096), plan.Activation)
 	for _, binding := range plan.Bindings {
 		fmt.Fprintf(stdout, "- %s\n", binding)
 	}
+	fmt.Fprintln(stdout, "\nBinding diagnostics:")
+	fmt.Fprintln(stdout, "- Run `intent-sh doctor --keys` interactively to verify delivery from the controlling terminal.")
+	fmt.Fprintln(stdout, "- Change native bindings with `intent-sh config set rewrite_key <chord>` and `undo_key <chord>`, then start a new shell.")
+	fmt.Fprintln(stdout, "- Supported chords are one Alt+printable-ASCII key or one unreserved Ctrl+letter; defaults are Alt+G and Alt+U.")
 	if plan.Shell == setupguide.ShellBash {
 		fmt.Fprintln(stdout, "\nOptional Bash 3.2 compatibility (user managed):")
 		fmt.Fprintf(stdout, "- Bash 3.2 requires ble.sh %s from commit %s.\n", plan.BleshVersion, plan.BleshCommit)
 		fmt.Fprintf(stdout, "- Install and manage ble.sh separately using the official project: %s\n", plan.BleshInstallURL)
 		fmt.Fprintln(stdout, "- Load and attach ble.sh before this activation line; setup never downloads or sources it.")
 		fmt.Fprintln(stdout, "- Bash 4.0+ can use native Readline when ble.sh is not attached; stock Zsh is another native alternative.")
+		fmt.Fprintln(stdout, "- The existing ble.sh compatibility path remains on Alt+G/Alt+U; custom chords require native Readline or Zsh.")
 		fmt.Fprintln(stdout, "- Review existing ble-bind M-g/M-u bindings and accept-line advice before activation.")
 	}
 	if len(plan.Conflicts) > 0 || plan.BleshLoadOrderConflict {
@@ -212,7 +231,8 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 }
 
 func (command Command) runDoctor(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	if len(args) != 0 {
+	withKeys := len(args) == 1 && args[0] == "--keys"
+	if len(args) != 0 && !withKeys {
 		return invalidUsage(stderr)
 	}
 	runner := command.Doctor
@@ -220,7 +240,18 @@ func (command Command) runDoctor(ctx context.Context, args []string, stdout, std
 		defaultRunner := doctor.NewDefault()
 		runner = defaultRunner
 	}
-	report := runner.Run(ctx)
+	var report doctor.Report
+	if withKeys {
+		keyRunner, ok := runner.(DoctorKeysRunner)
+		if !ok {
+			err := apperr.New(apperr.KindInternal, "run doctor key probe", "interactive key diagnostics were not initialized")
+			writeError(stderr, err)
+			return apperr.ExitCode(err)
+		}
+		report = keyRunner.RunKeys(ctx)
+	} else {
+		report = runner.Run(ctx)
+	}
 	doctor.Render(stdout, report)
 	if report.Ready {
 		return apperr.ExitOK
@@ -258,5 +289,8 @@ func invalidUsage(stderr io.Writer) int {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintln(w, "usage: intent-sh <adapter|init|setup|config|doctor|version>")
+	fmt.Fprintln(w, "usage: intent-sh <adapter|init|setup|config|doctor [--keys]|version>")
+	fmt.Fprintln(w, "  doctor         run non-interactive local readiness checks")
+	fmt.Fprintln(w, "  doctor --keys  temporarily read bounded keys from /dev/tty; no provider is invoked")
+	fmt.Fprintln(w, "  setup bash|zsh print read-only activation, effective bindings, conflicts, and removal guidance")
 }
