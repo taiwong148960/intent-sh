@@ -7,7 +7,7 @@ Do not record prompts, generated commands, terminal screenshots, scrollback, his
 ## Prerequisites and scope
 
 - Use macOS or Linux on amd64 or arm64.
-- Use Zsh or Bash 4.0+ for configurable-chord qualification. The separately tested Bash 3.2 ble.sh backend retains fixed `Alt+G`/`Alt+U` bindings and is not part of this native binding matrix.
+- Use Zsh or Bash 4.0+ with its native editor for configurable-chord qualification.
 - Build the candidate `intent-sh` version and activate it in a new disposable shell. Have one official provider installed and logged in on the host where the shell runs.
 - Use an empty, non-sensitive working directory. Never put a credential or private text in the editable buffer.
 - For a named terminal record, run the checks in that actual terminal application. Do not infer a GUI-terminal pass from the repository's pseudo-terminal tests.

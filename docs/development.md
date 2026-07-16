@@ -2,7 +2,7 @@
 
 The default developer loop is `make check`. It is intentionally local-friendly: ordinary Go tests may skip opt-in integrations that are not configured. A dedicated qualification target is different: it sets strict mode, selects only its manifest-owned cases, and fails if any selected case or prerequisite is missing. The checked-in manifest is `.github/ci/test-manifest.json`; the auditor records only case identity, bounded phase, result, duration, and allow-listed matrix metadata.
 
-Use Go from `go.mod`, Node 20.19 or newer for the pinned OpenSpec package, and Bash plus Zsh. Individual integration targets list their extra prerequisites below. Do not add a skip to make required CI green: either supply the declared prerequisite, keep the test local-optional in the manifest, or make the job fail with a bounded diagnostic.
+Use Go from `go.mod`, Node 20.19 or newer for the pinned OpenSpec package, Bash 4.0 or newer, and Zsh. Individual integration targets list their extra prerequisites below. Do not add a skip to make required CI green: either supply the declared prerequisite, keep the test local-optional in the manifest, or make the job fail with a bounded diagnostic.
 
 ## Make targets
 
@@ -25,9 +25,6 @@ Use Go from `go.mod`, Node 20.19 or newer for the pinned OpenSpec package, and B
 | `shelltest-harness-test` | Test strict-mode, tmux isolation, SSH validation, and absent-target behavior without opening SSH. | `make shelltest-harness-test`. Required; no external service. |
 | `native-pty-test` | Bash/Zsh Emacs/Vi, chord, CR/LF, locale, TERM, resize, Unicode, provider-failure, safety, cancellation, teardown, setup, and removal journeys. | `INTENT_SH_TEST_BASH=/path/to/bash make native-pty-test QUALIFICATION_DIR=/absolute/results`; requires Bash 4+, Zsh, and PTYs. Required; missing capabilities fail. |
 | `tmux-test` | Full lifecycle, cancellation, resize, safety, detach/reattach, and pane/session isolation. | `INTENT_SH_TEST_TMUX=/path/to/tmux make tmux-test QUALIFICATION_DIR=/absolute/results`; uses only a private socket and empty config. Required. |
-| `bash32-negative-test` | Prove stock macOS Bash 3.2 stays inert without ble.sh. | `INTENT_SH_TEST_BASH32=/bin/bash make bash32-negative-test QUALIFICATION_DIR=/absolute/results`. Required macOS boundary. |
-| `blesh-fixture-test` | Exercise network-free empty, valid, corrupt, incomplete-runtime, symlink, and atomic-publication cache paths. | `make blesh-fixture-test`. Required on macOS and Linux; uses local synthetic archives. |
-| `blesh-test` | Run the full ble.sh lifecycle. | `export INTENT_SH_TEST_BLESH="$(bash .github/scripts/install-blesh-test.sh)"`; then `make blesh-test BLESH_SUITE=blesh-modern QUALIFICATION_DIR=/absolute/results`. For Bash 3.2 also set `INTENT_SH_TEST_BASH32` and use `BLESH_SUITE=blesh-bash32`. Required; no selected skip. |
 | `ssh-opt-in-test` | Prove ordinary execution does not contact SSH without explicit configuration. | `make ssh-opt-in-test`. Required safety guard. |
 | `ssh-test` | Loopback remote Bash/Zsh, disconnect teardown, and SSH-to-tmux state isolation. | On Linux set `RUNNER_TEMP=/absolute/job-dir`, run `.github/scripts/setup-loopback-ssh.sh start`, export the printed target and generated config plus `INTENT_SH_TEST_SSH_LOOPBACK=1`, run `make ssh-test QUALIFICATION_DIR=/absolute/results`, and always run the helper with `stop`. Required; the CI job owns the daemon/account/keys. |
 | `external-ssh-test` | The same remote journeys against a caller-owned host. | `INTENT_SH_TEST_SSH_TARGET=user@known-host make external-ssh-test`. Protected manual only; requires existing BatchMode authentication, known-host state, Bash 4+, Zsh, and tmux on the target. It never creates credentials. |
@@ -49,11 +46,11 @@ The required workflow runs on pushes to `main`, pull requests, merge queue group
 
 | Workflow tier | Jobs and timeout in minutes |
 | --- | --- |
-| Required | static 15; fixture installer 10; unit 15; race 20; native PTY 35; tmux 30; stock Bash 3.2 negative 15; ble.sh 40; loopback SSH 35; reproducible artifact build 20; cross-artifact inspection 10; native artifact 40; executable coverage 70; aggregate 5. |
+| Required | static 15; unit 15; race 20; native PTY 35; tmux 30; loopback SSH 35; reproducible artifact build 20; cross-artifact inspection 10; native artifact 40; executable coverage 70; aggregate 5. |
 | Scheduled/manual dispatch | PTY/tmux stress 90; independent fuzz 15; pinned shell compatibility 50; Ubuntu glibc distributions 45; native Linux arm64 60; unauthenticated provider capability 15; vulnerability/module security 20; capacity boundary 5. |
 | Protected manual dispatch | authenticated provider smoke 10; caller-owned external SSH 45. Both require `[self-hosted, intent-sh-trusted]` and the `trusted-qualification` environment. |
 
-Required jobs treat every manifest-selected skip, missing top-level test, duplicate/unexpected execution, or absent prerequisite as a failure. `make test` remains the only broad local path where opt-in SSH, ble.sh, tmux, or real-provider tests may report an expected skip.
+Required jobs treat every manifest-selected skip, missing top-level test, duplicate/unexpected execution, or absent prerequisite as a failure. `make test` remains the only broad local path where opt-in SSH, tmux, or real-provider tests may report an expected skip.
 
 The scheduled workflow records the shuffle seed/repeat, runs each registered fuzz target with its own budget, source-builds checksum-pinned minimum/current shells, qualifies Ubuntu 22.04/24.04 and native hosted arm64, probes exact unauthenticated provider CLIs without a model request, and records the pinned vulnerability scanner/database revision. musl PTY capacity is explicitly `UNAVAILABLE`; foreign artifacts are inspected, never reported as emulated PTY qualification.
 
@@ -64,7 +61,7 @@ Copy the failed job's exact matrix metadata and invoke the corresponding target 
 Every integration owns a narrow cleanup namespace:
 
 - tmux kills only its random private server and removes its mode-0700 socket directory;
-- ble.sh and shell source builders atomically replace only their configured fixture cache;
+- shell source builders atomically replace only their configured fixture cache;
 - loopback SSH removes its generated account, home, daemon, keys, config, tmux/provider processes, and `$RUNNER_TEMP/intent-sh-loopback-ssh` state in an `always()` step;
 - external SSH removes only the validated remote `intent-sh-ssh.*` directory it created; after a lost connection, verify ownership before removing that one namespace manually;
 - provider workspaces and coverage directories are disposable and must not be pointed at user data.

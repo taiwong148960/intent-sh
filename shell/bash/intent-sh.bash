@@ -7,7 +7,6 @@ else
 
 __intent_sh_load_adapter() {
 
-__intent_sh_expected_blesh_version=0.4.0-nightly+d69e4d5
 __intent_sh_requested_rewrite_key=__INTENT_SH_REWRITE_CANONICAL__
 __intent_sh_requested_undo_key=__INTENT_SH_UNDO_CANONICAL__
 __intent_sh_requested_rewrite_binding='__INTENT_SH_REWRITE_BINDING__'
@@ -36,8 +35,6 @@ __intent_sh_rewrite_key=$__intent_sh_requested_rewrite_key
 __intent_sh_undo_key=$__intent_sh_requested_undo_key
 __intent_sh_editor_backend=
 __intent_sh_editor_version=
-__intent_sh_blesh_keymap=
-: "${__intent_sh_blesh_advice_installed:=}"
 __intent_sh_original_buffer=
 __intent_sh_original_cursor=0
 __intent_sh_generated_command=
@@ -132,41 +129,7 @@ __intent_sh_handle_hangup() {
 }
 
 __intent_sh_runtime_failure_message() {
-    case ${INTENT_SH_ADAPTER_FAILURE-} in
-        detached)
-            __intent_sh_runtime_message="ble.sh detached; reattach it, then re-evaluate intent-sh init bash"
-            ;;
-        wrong_load_order)
-            __intent_sh_runtime_message="the Bash editor changed; load ble.sh first, then re-evaluate intent-sh init bash"
-            ;;
-        incompatible_version)
-            __intent_sh_runtime_message="ble.sh changed to an untested version; load $__intent_sh_expected_blesh_version and reinitialize"
-            ;;
-        keymap_changed)
-            __intent_sh_runtime_message="the ble.sh keymap changed; re-evaluate intent-sh init bash in Emacs or Vi insert mode"
-            ;;
-        *)
-            __intent_sh_runtime_message="the selected editor backend is no longer compatible; re-evaluate intent-sh init bash"
-            ;;
-    esac
-}
-
-__intent_sh_require_blesh_api() {
-    local name
-    for name in \
-        ble-bind \
-        blehook \
-        ble/function#advice \
-        ble/function#advice/do \
-        ble/widget/default/accept-line \
-        ble/widget/print \
-        ble/widget/.EDIT_COMMAND
-    do
-        if ! declare -F "$name" >/dev/null 2>&1; then
-            return 1
-        fi
-    done
-    return 0
+    __intent_sh_runtime_message="the native Readline backend is no longer compatible; re-evaluate intent-sh init bash"
 }
 
 __intent_sh_mark_runtime_failure() {
@@ -174,77 +137,29 @@ __intent_sh_mark_runtime_failure() {
 }
 
 __intent_sh_check_backend() {
-    case $__intent_sh_editor_backend in
-        blesh)
-            if [[ ${INTENT_SH_ADAPTER_READY-} != 1 ]]; then
-                return 1
-            fi
-            if [[ ${BLE_ATTACHED-} != 1 ]]; then
-                __intent_sh_mark_runtime_failure detached ""
-                return 1
-            fi
-            if [[ ${BLE_VERSION-} != "$__intent_sh_expected_blesh_version" ]]; then
-                __intent_sh_mark_runtime_failure incompatible_version ""
-                return 1
-            fi
-            if ! __intent_sh_require_blesh_api; then
-                __intent_sh_mark_runtime_failure missing_api ""
-                return 1
-            fi
-            if [[ ${_ble_decode_keymap-} != "$__intent_sh_blesh_keymap" ]]; then
-                __intent_sh_mark_runtime_failure keymap_changed ""
-                return 1
-            fi
-            if [[ $__intent_sh_blesh_advice_installed != 1 ]] ||
-                ! declare -F ble/function#advice/around:ble/widget/default/accept-line >/dev/null 2>&1
-            then
-                __intent_sh_mark_runtime_failure missing_api "accept-line"
-                return 1
-            fi
-            ;;
-        readline)
-            if ((BASH_VERSINFO[0] < 4)); then
-                __intent_sh_mark_runtime_failure unsupported_bash ""
-                return 1
-            fi
-            if [[ ${BLE_ATTACHED-} == 1 ]]; then
-                __intent_sh_mark_runtime_failure wrong_load_order ""
-                return 1
-            fi
-            ;;
-        *)
-            __intent_sh_mark_runtime_failure missing_backend ""
-            return 1
-            ;;
-    esac
+    if ((BASH_VERSINFO[0] < 4)); then
+        __intent_sh_mark_runtime_failure unsupported_bash ""
+        return 1
+    fi
+    if [[ $__intent_sh_editor_backend != readline || ${INTENT_SH_ADAPTER_READY-} != 1 ]]; then
+        __intent_sh_mark_runtime_failure missing_backend ""
+        return 1
+    fi
     return 0
 }
 
 __intent_sh_protocol_cursor_from_editor() {
-    local line=$1 editor_cursor=$2
-    if [[ $__intent_sh_editor_backend == blesh ]]; then
-        local prefix=${line:0:editor_cursor}
-        local LC_ALL=C
-        __intent_sh_protocol_cursor=${#prefix}
-    else
-        __intent_sh_protocol_cursor=$editor_cursor
-    fi
+    __intent_sh_protocol_cursor=$2
 }
 
 __intent_sh_place_cursor_at_end() {
     local value=${READLINE_LINE-}
-    if [[ $__intent_sh_editor_backend == blesh ]]; then
-        READLINE_POINT=${#value}
-    else
-        local LC_ALL=C
-        READLINE_POINT=${#value}
-    fi
+    local LC_ALL=C
+    READLINE_POINT=${#value}
 }
 
 __intent_sh_reset_native_continuation() {
-    if [[ $__intent_sh_editor_backend == readline ]]; then
-        bind -x '"\C-^":__intent_sh_noop'
-    fi
+    bind -x '"\C-^":__intent_sh_noop'
 }
 
 __intent_sh_read_response() {
@@ -324,7 +239,6 @@ __intent_sh_rewrite() {
 
     local __intent_sh_interrupted=0
     local __intent_sh_provider_pid=
-    local __intent_sh_signal_mode=trap
     local __intent_sh_previous_int_trap=
     local __intent_sh_previous_hup_trap=
     local __intent_sh_tty_state=
@@ -343,18 +257,9 @@ __intent_sh_rewrite() {
     local command_status=0
     __intent_sh_previous_hup_trap=$(builtin trap -p HUP)
     builtin trap '__intent_sh_handle_hangup' HUP
-    # Keep asynchronous signal handling deliberately minimal. ble.sh owns the
-    # real INT trap while its editor is attached, so use its supported hook
-    # registry instead of replacing that trap from inside an edit widget.
-    # Native Readline has no such dispatcher and uses a scoped Bash trap.
-    if [[ $__intent_sh_editor_backend == blesh ]]; then
-        __intent_sh_signal_mode=blesh
-        blehook 'INT-=__intent_sh_forward_interrupt' >/dev/null 2>&1 || :
-        blehook 'INT!=__intent_sh_forward_interrupt'
-    else
-        __intent_sh_previous_int_trap=$(builtin trap -p INT)
-        builtin trap '__intent_sh_forward_interrupt process-signal' INT
-    fi
+    # Use a scoped Bash trap while native Readline owns the interactive line.
+    __intent_sh_previous_int_trap=$(builtin trap -p INT)
+    builtin trap '__intent_sh_forward_interrupt process-signal' INT
     { printf '%s\0' \
             "$__intent_sh_protocol_version" \
             rewrite \
@@ -371,9 +276,8 @@ __intent_sh_rewrite() {
     } | command intent-sh adapter rewrite --protocol "$__intent_sh_protocol_version" > "$tmp" &
     __intent_sh_provider_pid=$!
     if [[ -n $__intent_sh_tty_state ]]; then
-        # Bash 3.2 can segfault when SIGINT interrupts its timed `read` builtin
-        # from inside a ble.sh edit widget. Run terminal polling in a monitor
-        # process instead; the interactive shell only waits and reaps jobs.
+        # Keep terminal polling in a monitor process so timed reads cannot
+        # interrupt the interactive shell; it only waits and reaps jobs.
         # Disable monitor mode for this spawn so the reader stays in the
         # terminal's foreground process group and is allowed to read /dev/tty.
         local __intent_sh_monitor_mode=0
@@ -425,22 +329,16 @@ __intent_sh_rewrite() {
         command rm -f -- "$__intent_sh_cancel_path"
         command rmdir -- "${__intent_sh_cancel_path}.lock" 2>/dev/null || :
     fi
-    if [[ $__intent_sh_signal_mode == blesh ]]; then
-        blehook 'INT-=__intent_sh_forward_interrupt' >/dev/null 2>&1 || :
-    else
-        # Ignore a second INT during the small reporting window, then put back
-        # the caller's exact trap below.
-        builtin trap '' INT
-    fi
+    # Ignore a second INT during the small reporting window, then put back the
+    # caller's exact trap below.
+    builtin trap '' INT
     if ((__intent_sh_interrupted)); then
         __intent_sh_message "cancelled"
     fi
-    if [[ $__intent_sh_signal_mode != blesh ]]; then
-        if [[ -n $__intent_sh_previous_int_trap ]]; then
-            builtin eval "builtin $__intent_sh_previous_int_trap"
-        else
-            builtin trap - INT
-        fi
+    if [[ -n $__intent_sh_previous_int_trap ]]; then
+        builtin eval "builtin $__intent_sh_previous_int_trap"
+    else
+        builtin trap - INT
     fi
     __intent_sh_restore_hup_trap
     if ((__intent_sh_interrupted)); then
@@ -589,165 +487,6 @@ __intent_sh_accept_guard() {
     bind '"\C-^": accept-line'
 }
 
-__intent_sh_blesh_accept_guard() {
-    local current=${_ble_edit_str-}
-    __intent_sh_blesh_accept_action=block
-    if ! __intent_sh_check_backend; then
-        __intent_sh_clear_chain
-        __intent_sh_runtime_failure_message
-        ble/widget/print "intent-sh: $__intent_sh_runtime_message"
-        return 0
-    fi
-    if [[ -n $__intent_sh_generated_command && $current != "$__intent_sh_generated_command" ]]; then
-        __intent_sh_clear_chain
-        __intent_sh_blesh_accept_action=delegate
-        return 0
-    fi
-    if [[ $__intent_sh_risk == dangerous && -n $__intent_sh_generated_command && $current == "$__intent_sh_generated_command" ]]; then
-        if [[ $__intent_sh_armed_fingerprint == "$current" ]]; then
-            __intent_sh_clear_chain
-            __intent_sh_blesh_accept_action=delegate
-            return 0
-        fi
-        __intent_sh_armed_fingerprint=$current
-        ble/widget/print "intent-sh: DANGEROUS: ${__intent_sh_risk_reason:-dangerous command}. Press Enter again to execute."
-        return 0
-    fi
-    __intent_sh_clear_chain
-    __intent_sh_blesh_accept_action=delegate
-}
-
-__intent_sh_blesh_detach() {
-    __intent_sh_clear_chain
-    __intent_sh_set_status blesh "$__intent_sh_expected_blesh_version" 0 detached ""
-    if declare -F ble/function#advice >/dev/null 2>&1; then
-        ble/function#advice remove ble/widget/default/accept-line >/dev/null 2>&1 || :
-    fi
-    __intent_sh_blesh_advice_installed=
-}
-
-__intent_sh_blesh_binding_state() {
-    local key=$1 default_widget=$2 callback=$3 line
-    __intent_sh_binding_state=unbound
-    while IFS= read -r line; do
-        if [[ $line == "ble-bind -m '$__intent_sh_blesh_keymap' -f $key '$default_widget'" ||
-            $line == "ble-bind -m '$__intent_sh_blesh_keymap' -f '$key' '$default_widget'" ||
-            $line == "ble-bind -m '$__intent_sh_blesh_keymap' -f $key $default_widget" ||
-            $line == "ble-bind -m '$__intent_sh_blesh_keymap' -f '$key' $default_widget" ]]; then
-            __intent_sh_binding_state=default
-        elif [[ $line == "ble-bind -m '$__intent_sh_blesh_keymap' -x $key '$callback'" ||
-            $line == "ble-bind -m '$__intent_sh_blesh_keymap' -x '$key' '$callback'" ||
-            $line == "ble-bind -m '$__intent_sh_blesh_keymap' -x $key $callback" ||
-            $line == "ble-bind -m '$__intent_sh_blesh_keymap' -x '$key' $callback" ]]; then
-            __intent_sh_binding_state=ours
-        else
-            case $line in
-                "ble-bind -m '$__intent_sh_blesh_keymap' -f $key "*|\
-                "ble-bind -m '$__intent_sh_blesh_keymap' -f '$key' "*|\
-                "ble-bind -m '$__intent_sh_blesh_keymap' -x $key "*|\
-                "ble-bind -m '$__intent_sh_blesh_keymap' -x '$key' "*|\
-                "ble-bind -m '$__intent_sh_blesh_keymap' -c $key "*|\
-                "ble-bind -m '$__intent_sh_blesh_keymap' -c '$key' "*|\
-                "ble-bind -m '$__intent_sh_blesh_keymap' -s $key "*|\
-                "ble-bind -m '$__intent_sh_blesh_keymap' -s '$key' "*|\
-                "ble-bind -m '$__intent_sh_blesh_keymap' -@ $key "*|\
-                "ble-bind -m '$__intent_sh_blesh_keymap' -@ '$key' "*)
-                    __intent_sh_binding_state=conflict
-                    ;;
-            esac
-        fi
-    done < <(ble-bind -P -m "$__intent_sh_blesh_keymap" 2>/dev/null)
-    [[ $__intent_sh_binding_state != conflict ]]
-}
-
-__intent_sh_restore_blesh_binding() {
-    local key=$1 default_widget=$2 state=$3
-    case $state in
-        default)
-            ble-bind -m "$__intent_sh_blesh_keymap" -f "$key" "$default_widget" >/dev/null 2>&1 || :
-            ;;
-        unbound)
-            ble-bind -m "$__intent_sh_blesh_keymap" -f "$key" - >/dev/null 2>&1 || :
-            ;;
-    esac
-}
-
-__intent_sh_initialize_blesh() {
-    __intent_sh_editor_backend=blesh
-    __intent_sh_editor_version=$__intent_sh_expected_blesh_version
-    if ! __intent_sh_require_blesh_api; then
-        __intent_sh_fail_initialization blesh "$__intent_sh_editor_version" missing_api "" \
-            "the attached ble.sh is missing a required edit or widget API; load the tested version and try again"
-        return 1
-    fi
-
-    __intent_sh_blesh_keymap=${_ble_decode_keymap-}
-    case $__intent_sh_blesh_keymap in
-        emacs|vi_imap) ;;
-        *)
-            __intent_sh_fail_initialization blesh "$__intent_sh_editor_version" unsupported_keymap "" \
-                "ble.sh must be in Emacs or Vi insert mode before intent-sh is initialized"
-            return 1
-            ;;
-    esac
-
-    local mg_state mu_state
-    if ! __intent_sh_blesh_binding_state M-g 'complete context=glob' __intent_sh_rewrite; then
-        __intent_sh_fail_initialization blesh "$__intent_sh_editor_version" binding_conflict M-g \
-            "ble.sh already has an unsupported M-g binding; resolve it before initializing intent-sh"
-        return 1
-    fi
-    mg_state=$__intent_sh_binding_state
-    if ! __intent_sh_blesh_binding_state M-u upcase-eword __intent_sh_undo; then
-        __intent_sh_fail_initialization blesh "$__intent_sh_editor_version" binding_conflict M-u \
-            "ble.sh already has an unsupported M-u binding; resolve it before initializing intent-sh"
-        return 1
-    fi
-    mu_state=$__intent_sh_binding_state
-
-    if declare -F ble/function#advice/around:ble/widget/default/accept-line >/dev/null 2>&1 &&
-        [[ $__intent_sh_blesh_advice_installed != 1 ]]
-    then
-        __intent_sh_fail_initialization blesh "$__intent_sh_editor_version" binding_conflict accept-line \
-            "ble.sh already has an accept-line advice; resolve it before initializing intent-sh"
-        return 1
-    fi
-
-    if ! ble-bind -m "$__intent_sh_blesh_keymap" -x M-g __intent_sh_rewrite >/dev/null 2>&1; then
-        __intent_sh_fail_initialization blesh "$__intent_sh_editor_version" binding_failed M-g \
-            "ble.sh could not install the M-g rewrite binding"
-        return 1
-    fi
-    if ! ble-bind -m "$__intent_sh_blesh_keymap" -x M-u __intent_sh_undo >/dev/null 2>&1; then
-        __intent_sh_restore_blesh_binding M-g 'complete context=glob' "$mg_state"
-        __intent_sh_fail_initialization blesh "$__intent_sh_editor_version" binding_failed M-u \
-            "ble.sh could not install the M-u undo binding"
-        return 1
-    fi
-    if ! ble/function#advice around ble/widget/default/accept-line \
-        '__intent_sh_blesh_accept_guard; [[ $__intent_sh_blesh_accept_action != delegate ]] || ble/function#advice/do' \
-        >/dev/null 2>&1; then
-        __intent_sh_restore_blesh_binding M-g 'complete context=glob' "$mg_state"
-        __intent_sh_restore_blesh_binding M-u upcase-eword "$mu_state"
-        __intent_sh_fail_initialization blesh "$__intent_sh_editor_version" binding_failed accept-line \
-            "ble.sh could not install the guarded accept-line integration"
-        return 1
-    fi
-    __intent_sh_blesh_advice_installed=1
-    if ! blehook 'DETACH!=__intent_sh_blesh_detach' >/dev/null 2>&1; then
-        ble/function#advice remove ble/widget/default/accept-line >/dev/null 2>&1 || :
-        __intent_sh_blesh_advice_installed=
-        __intent_sh_restore_blesh_binding M-g 'complete context=glob' "$mg_state"
-        __intent_sh_restore_blesh_binding M-u upcase-eword "$mu_state"
-        __intent_sh_fail_initialization blesh "$__intent_sh_editor_version" binding_failed detach-hook \
-            "ble.sh could not install the detach safety hook"
-        return 1
-    fi
-
-    __intent_sh_set_status blesh "$__intent_sh_editor_version" 1 "" ""
-    return 0
-}
-
 __intent_sh_initialize_readline() {
     __intent_sh_editor_backend=readline
     __intent_sh_editor_version=$BASH_VERSION
@@ -764,40 +503,14 @@ __intent_sh_initialize_readline() {
 __intent_sh_initialize() {
     __intent_sh_set_status none none 0 initializing ""
 
-    if ((BASH_VERSINFO[0] < 3 || BASH_VERSINFO[0] == 3 && BASH_VERSINFO[1] < 2)); then
+    if ((BASH_VERSINFO[0] < 4)); then
         __intent_sh_fail_initialization none none unsupported_bash "" \
-            "Bash 3.2 is the conditional minimum; use stock Zsh or install a modern Bash"
+            "Bash 4.0 or newer is required; use Zsh or install a supported Bash"
         return 1
     fi
 
-    if [[ ${BLE_ATTACHED-} == 1 ]]; then
-        if [[ $__intent_sh_rewrite_key != alt+g || $__intent_sh_undo_key != alt+u ]]; then
-            __intent_sh_fail_initialization blesh "${BLE_VERSION-unknown}" unsupported_binding "" \
-                "custom rewrite and undo bindings currently require native Bash 4+ Readline or Zsh; the existing ble.sh contract keeps Alt+G and Alt+U"
-            return 1
-        fi
-        if [[ ${BLE_VERSION-} != "$__intent_sh_expected_blesh_version" ]]; then
-            __intent_sh_fail_initialization blesh unsupported incompatible_version "" \
-                "attached ble.sh is untested; load $__intent_sh_expected_blesh_version before intent-sh"
-            return 1
-        fi
-        __intent_sh_initialize_blesh
-        return $?
-    fi
-
-    if ((BASH_VERSINFO[0] >= 4)); then
-        __intent_sh_initialize_readline
-        return $?
-    fi
-
-    if [[ ${BLE_VERSION-} == "$__intent_sh_expected_blesh_version" ]] || declare -F ble-bind >/dev/null 2>&1; then
-        __intent_sh_fail_initialization blesh "$__intent_sh_expected_blesh_version" not_attached "" \
-            "ble.sh is loaded but not attached; attach it before evaluating intent-sh init bash"
-    else
-        __intent_sh_fail_initialization none none missing_blesh "" \
-            "Bash 3.2 requires the tested ble.sh loaded first; alternatively use stock Zsh or install Bash 4+"
-    fi
-    return 1
+    __intent_sh_initialize_readline
+    return $?
 }
 
 if ! __intent_sh_initialize; then

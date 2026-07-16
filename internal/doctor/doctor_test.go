@@ -196,42 +196,42 @@ func TestProviderProbeStageChecks(t *testing.T) {
 	}
 }
 
-func TestBashThreeWithoutBleshAndNativeKeyConflictsFailClosed(t *testing.T) {
+func TestUnsupportedBashFailsBeforeEditorDiagnostics(t *testing.T) {
 	t.Parallel()
 	deps := healthyDependencies()
 	deps.ShellPath = "/bin/bash"
 	deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 3.2.57", nil }
 	deps.AdapterStatus = func() AdapterStatus {
 		return AdapterStatus{
-			Present: true, Protocol: protocol.AdapterVersion, Backend: "none",
-			EditorVersion: "none", Ready: "0", Failure: "missing_blesh",
+			Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendReadline,
+			EditorVersion: "3.2.57", Ready: "1",
 		}
-	}
-	deps.InspectSetup = func(string) (setupguide.Plan, error) {
-		return setupguide.Plan{Conflicts: []setupguide.Conflict{{Key: "Alt+G"}, {Key: "Enter (CR)"}}}, nil
 	}
 	report := (Runner{Dependencies: deps}).Run(context.Background())
 	checks := checksByID(report)
-	if report.Ready || checks["shell.compatibility"].Status != StatusPass || checks["shell.editor_backend"].Status != StatusFail || checks["shell.default_keys"].Status != StatusFail {
+	if report.Ready || checks["shell.compatibility"].Status != StatusFail || checks["shell.editor_backend"].Status != StatusSkip {
 		t.Fatalf("report = %#v", report)
 	}
+	if checks["shell.backend_keys"].Status != StatusSkip {
+		t.Fatalf("check shell.backend_keys = %#v", checks["shell.backend_keys"])
+	}
 	output := render(report)
-	for _, want := range []string{"conditionally supported", "tested ble.sh", "stock Zsh", "Alt+G, Enter (CR)"} {
+	for _, want := range []string{"below the 4.0 minimum", "Resolve shell compatibility first"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output omitted %q:\n%s", want, output)
 		}
 	}
 }
 
-func TestBashThreeWithTestedBleshIsReady(t *testing.T) {
+func TestSupportedBashWithNativeReadlineIsReady(t *testing.T) {
 	t.Parallel()
 	deps := healthyDependencies()
 	deps.ShellPath = "/bin/bash"
-	deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 3.2.57", nil }
+	deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 5.2.37", nil }
 	deps.AdapterStatus = func() AdapterStatus {
 		return AdapterStatus{
-			Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
-			EditorVersion: protocol.BleshVersion, Ready: "1",
+			Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendReadline,
+			EditorVersion: "5.2.37", Ready: "1",
 		}
 	}
 	report := (Runner{Dependencies: deps}).Run(context.Background())
@@ -239,67 +239,46 @@ func TestBashThreeWithTestedBleshIsReady(t *testing.T) {
 	if !report.Ready {
 		t.Fatalf("report = %#v", report)
 	}
-	for _, id := range []string{"shell.compatibility", "shell.editor_backend", "shell.blesh.version", "shell.blesh.api", "shell.blesh.attachment", "shell.blesh.load_order", "shell.backend_keys"} {
+	for _, id := range []string{"shell.compatibility", "shell.editor_backend", "shell.backend_keys"} {
 		if checks[id].Status != StatusPass {
 			t.Fatalf("check %s = %#v", id, checks[id])
 		}
 	}
 }
 
-func TestBashBackendCapabilityFailuresAreSpecificAndFailClosed(t *testing.T) {
+func TestBashNativeBackendFailuresAreSpecificAndFailClosed(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name       string
 		status     AdapterStatus
-		plan       setupguide.Plan
 		checkID    string
 		wantDetail string
 	}{
 		{
-			name: "native readline is incoherent",
+			name: "native readline version mismatch",
 			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendReadline,
-				EditorVersion: "3.2.57(1)-release", Ready: "1"},
-			checkID: "shell.editor_backend", wantDetail: "incompatible with this shell version",
+				EditorVersion: "4.0.0(1)-release", Ready: "1"},
+			checkID: "shell.editor_backend", wantDetail: "editor version is incompatible",
 		},
 		{
-			name: "unsupported version",
-			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
-				EditorVersion: "0.4.0-unsupported", Ready: "0", Failure: "incompatible_version"},
-			checkID: "shell.blesh.version", wantDetail: "does not match",
+			name: "unsupported backend",
+			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: "alternate",
+				EditorVersion: "5.2.37", Ready: "1"},
+			checkID: "shell.editor_backend", wantDetail: "invalid or unbounded",
 		},
 		{
-			name: "missing API",
-			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
-				EditorVersion: protocol.BleshVersion, Ready: "0", Failure: "missing_api"},
-			checkID: "shell.blesh.api", wantDetail: "required ble.sh",
-		},
-		{
-			name: "detached",
-			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
-				EditorVersion: protocol.BleshVersion, Ready: "0", Failure: "detached"},
-			checkID: "shell.blesh.attachment", wantDetail: "not reported",
-		},
-		{
-			name: "runtime key conflict",
-			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
-				EditorVersion: protocol.BleshVersion, Ready: "0", Failure: "binding_conflict", Conflicts: "M-g"},
-			checkID: "shell.backend_keys", wantDetail: "Alt+G",
-		},
-		{
-			name: "static load order",
-			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: protocol.EditorBackendBlesh,
-				EditorVersion: protocol.BleshVersion, Ready: "1"},
-			plan:    setupguide.Plan{BleshLoadOrderConflict: true},
-			checkID: "shell.blesh.load_order", wantDetail: "intent-sh before ble.sh",
+			name: "native editor unavailable",
+			status: AdapterStatus{Present: true, Protocol: protocol.AdapterVersion, Backend: "none",
+				EditorVersion: "none", Ready: "0", Failure: "missing_backend"},
+			checkID: "shell.editor_backend", wantDetail: "native editor state is unavailable",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			deps := healthyDependencies()
 			deps.ShellPath = "/bin/bash"
-			deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 3.2.57", nil }
+			deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 5.2.37", nil }
 			deps.AdapterStatus = func() AdapterStatus { return test.status }
-			deps.InspectSetup = func(string) (setupguide.Plan, error) { return test.plan, nil }
 			report := (Runner{Dependencies: deps}).Run(context.Background())
 			check := checksByID(report)[test.checkID]
 			if report.Ready || check.Status != StatusFail || !strings.Contains(check.Detail, test.wantDetail) {
@@ -314,7 +293,7 @@ func TestDoctorNeverPrintsUnboundedAdapterOrBindingValues(t *testing.T) {
 	secret := "SECRET_INTENT_GENERATED_BINDING_CREDENTIAL"
 	deps := healthyDependencies()
 	deps.ShellPath = "/bin/bash"
-	deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 3.2.57", nil }
+	deps.ShellVersion = func(context.Context, string) (string, error) { return "GNU bash, version 5.2.37", nil }
 	deps.AdapterStatus = func() AdapterStatus {
 		return AdapterStatus{
 			Present: true, Protocol: protocol.AdapterVersion, Backend: strings.Repeat(secret, 20),
@@ -324,7 +303,6 @@ func TestDoctorNeverPrintsUnboundedAdapterOrBindingValues(t *testing.T) {
 	deps.InspectSetup = func(string) (setupguide.Plan, error) {
 		return setupguide.Plan{Conflicts: []setupguide.Conflict{
 			{Backend: setupguide.ConflictBackendNative, Key: secret},
-			{Backend: setupguide.ConflictBackendBlesh, Key: secret},
 		}}, nil
 	}
 	report := (Runner{Dependencies: deps}).Run(context.Background())
@@ -343,8 +321,8 @@ func TestDoctorNeverPrintsUnboundedAdapterOrBindingValues(t *testing.T) {
 func TestInspectAdapterStatusAcceptsOnlyBoundedMarkers(t *testing.T) {
 	values := map[string]string{
 		"INTENT_SH_ADAPTER_PROTOCOL":       protocol.AdapterVersion,
-		"INTENT_SH_ADAPTER_BACKEND":        protocol.EditorBackendBlesh,
-		"INTENT_SH_ADAPTER_EDITOR_VERSION": protocol.BleshVersion,
+		"INTENT_SH_ADAPTER_BACKEND":        protocol.EditorBackendReadline,
+		"INTENT_SH_ADAPTER_EDITOR_VERSION": "5.2.37",
 		"INTENT_SH_ADAPTER_READY":          "1",
 		"INTENT_SH_ADAPTER_FAILURE":        "",
 		"INTENT_SH_ADAPTER_CONFLICTS":      "",

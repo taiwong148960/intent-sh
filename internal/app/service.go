@@ -185,27 +185,20 @@ func validateEditor(request protocol.AdapterRequest) error {
 		}
 		return nil
 	case safety.ShellBash:
-		major, minor, ok := shellMajorMinor(request.ShellVersion)
+		major, _, ok := shellMajorMinor(request.ShellVersion)
 		if !ok {
 			return apperr.New(apperr.KindInvalidInput, "validate adapter request", "Bash version must start with a numeric major and minor version")
 		}
-		switch request.EditorBackend {
-		case protocol.EditorBackendReadline:
-			if major < 4 || request.EditorVersion != request.ShellVersion {
-				return apperr.New(apperr.KindProtocol, "validate adapter request", "native Readline requires Bash 4.0 or newer with a matching editor version")
-			}
-			return nil
-		case protocol.EditorBackendBlesh:
-			if major < 3 || major == 3 && minor < 2 {
-				return apperr.New(apperr.KindProtocol, "validate adapter request", "the ble.sh backend requires Bash 3.2 or newer")
-			}
-			if request.EditorVersion != protocol.BleshVersion {
-				return apperr.New(apperr.KindProtocol, "validate adapter request", "ble.sh is incompatible; load the exact tested version before reinitializing intent-sh")
-			}
-			return nil
-		default:
-			return apperr.New(apperr.KindProtocol, "validate adapter request", "Bash editor backend must be readline or blesh")
+		if major < 4 {
+			return apperr.New(apperr.KindProtocol, "validate adapter request", "Bash 4.0 or newer is required")
 		}
+		if request.EditorBackend != protocol.EditorBackendReadline {
+			return apperr.New(apperr.KindProtocol, "validate adapter request", "Bash requires the native Readline editor backend")
+		}
+		if request.EditorVersion != request.ShellVersion {
+			return apperr.New(apperr.KindProtocol, "validate adapter request", "native Readline requires Bash 4.0 or newer with a matching editor version")
+		}
+		return nil
 	default:
 		return apperr.New(apperr.KindInvalidInput, "validate adapter request", "supported shells are bash and zsh")
 	}

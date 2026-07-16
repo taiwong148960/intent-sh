@@ -21,8 +21,6 @@ const (
 const (
 	EditorBackendZLE      = "zle"
 	EditorBackendReadline = "readline"
-	EditorBackendBlesh    = "blesh"
-	BleshVersion          = "0.4.0-nightly+d69e4d5"
 )
 
 const (

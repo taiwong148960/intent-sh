@@ -60,16 +60,6 @@
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestNativeEditorsUnicodeCursorRoundTripInPTY"}
       ]
     },
-    "bash32-negative": {
-      "tier": "required",
-      "description": "macOS system Bash 3.2 must remain inert without ble.sh and fail before binding.",
-      "prerequisites": ["go", "bash=3.2", "pty"],
-      "matrix": ["macos"],
-      "expected": [
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBash32WithoutBleshFailsBeforeBinding"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBash32MissingBleshIsInertInPTY"}
-      ]
-    },
     "tmux": {
       "tier": "required",
       "description": "Private-socket tmux lifecycle, detach/reattach, isolation, and intercepted-binding conformance.",
@@ -80,55 +70,6 @@
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxLifecycleMatrix"},
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxDetachReattachAndSessionStateIsolation"},
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxInterceptedRootBindingFailsKeyDeliveryDiagnostic"}
-      ]
-    },
-    "blesh-bash32": {
-      "tier": "required",
-      "description": "Pinned Bash 3.2 plus pinned ble.sh contract and full PTY lifecycle qualification.",
-      "prerequisites": ["go", "bash=3.2", "ble.sh", "pty"],
-      "matrix": ["ubuntu", "macos"],
-      "expected": [
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshEditCommandContract"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAdapterInitialization"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshOrdinaryAcceptanceContract"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAcceptAdviceDelegationContract"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAcceptAdviceRuntimeDelegationContract"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshInitializationRefusesConflictsWithoutPartialBindings"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshInitializationFailuresLeaveNoPartialIntegration"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBash32MissingBleshIsInertInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPRewriteLifecycleInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshStaleResponseInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAdapterPreservesOrdinaryAcceptanceInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshClaudeEndToEndNoAutoExecutionInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshSourceSetupDoctorAndRemovalJourneyInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPSafetyAndFailureParityInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPTimeoutAndCancellationInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshDetachRequiresExplicitReinitializationInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshUnicodeCursorRoundTripInPTY"}
-      ]
-    },
-    "blesh-modern": {
-      "tier": "required",
-      "description": "Current Bash plus pinned ble.sh compatibility and acceptance qualification.",
-      "prerequisites": ["go", "bash>=4", "ble.sh", "pty"],
-      "matrix": ["ubuntu", "macos"],
-      "expected": [
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshEditCommandContract"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAdapterInitialization"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshOrdinaryAcceptanceContract"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAcceptAdviceDelegationContract"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAcceptAdviceRuntimeDelegationContract"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshInitializationRefusesConflictsWithoutPartialBindings"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestModernBashNativeAndBleshAcceptanceContract"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPRewriteLifecycleInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshStaleResponseInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAdapterPreservesOrdinaryAcceptanceInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshClaudeEndToEndNoAutoExecutionInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshSourceSetupDoctorAndRemovalJourneyInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPSafetyAndFailureParityInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPTimeoutAndCancellationInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshDetachRequiresExplicitReinitializationInPTY"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshUnicodeCursorRoundTripInPTY"}
       ]
     },
     "ssh-loopback": {
