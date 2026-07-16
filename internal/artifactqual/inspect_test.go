@@ -9,8 +9,8 @@ import (
 )
 
 func TestInspectNativeReproducibleArtifact(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
-		t.Skip("artifact formats are qualified on Darwin and Linux")
+	if runtime.GOOS != "darwin" {
+		t.Skip("artifact qualification requires macOS")
 	}
 	root := filepath.Clean(filepath.Join(repositoryDirectory(t), "..", ".."))
 	path := filepath.Join(t.TempDir(), NativeTarget().Filename())
@@ -49,14 +49,14 @@ func TestInspectNativeReproducibleArtifact(t *testing.T) {
 }
 
 func TestInspectRejectsWrongTargetAndTruncatedInput(t *testing.T) {
-	truncated := filepath.Join(t.TempDir(), "intent-sh-linux-amd64")
+	truncated := filepath.Join(t.TempDir(), "intent-sh-darwin-amd64")
 	if err := os.WriteFile(truncated, []byte("not an executable artifact"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Inspect(truncated, Target{GOOS: "linux", GOARCH: "amd64"}); err == nil {
+	if _, err := Inspect(truncated, Target{GOOS: "darwin", GOARCH: "amd64"}); err == nil {
 		t.Fatal("truncated artifact was accepted")
 	}
-	if _, err := Inspect(truncated, Target{GOOS: "windows", GOARCH: "amd64"}); err == nil {
+	if _, err := Inspect(truncated, Target{GOOS: "invalid", GOARCH: "amd64"}); err == nil {
 		t.Fatal("unsupported target was accepted")
 	}
 }

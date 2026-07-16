@@ -1,12 +1,11 @@
 // Package artifactqual validates release-path intent-sh executables without
-// running foreign operating-system or architecture binaries.
+// running artifacts built for another macOS architecture.
 package artifactqual
 
 import (
 	"bytes"
 	"crypto/sha256"
 	"debug/buildinfo"
-	"debug/elf"
 	"debug/macho"
 	"encoding/hex"
 	"errors"
@@ -30,8 +29,6 @@ func (target Target) Filename() string {
 var SupportedTargets = []Target{
 	{GOOS: "darwin", GOARCH: "amd64"},
 	{GOOS: "darwin", GOARCH: "arm64"},
-	{GOOS: "linux", GOARCH: "amd64"},
-	{GOOS: "linux", GOARCH: "arm64"},
 }
 
 type Report struct {
@@ -72,28 +69,15 @@ func Inspect(path string, target Target) (Report, error) {
 	report.SHA256 = hex.EncodeToString(digest[:])
 	report.Size = info.Size()
 
-	switch target.GOOS {
-	case "darwin":
-		binary, err := macho.Open(path)
-		if err != nil {
-			return Report{}, fmt.Errorf("open Mach-O artifact: %w", err)
-		}
-		defer binary.Close()
-		if binary.Type != macho.TypeExec || !machoCPUIs(binary.Cpu, target.GOARCH) {
-			return Report{}, errors.New("Mach-O executable architecture does not match its target")
-		}
-		report.Format = "Mach-O"
-	case "linux":
-		binary, err := elf.Open(path)
-		if err != nil {
-			return Report{}, fmt.Errorf("open ELF artifact: %w", err)
-		}
-		defer binary.Close()
-		if binary.Type != elf.ET_EXEC || !elfMachineIs(binary.Machine, target.GOARCH) {
-			return Report{}, errors.New("ELF executable architecture does not match its target")
-		}
-		report.Format = "ELF"
+	binary, err := macho.Open(path)
+	if err != nil {
+		return Report{}, fmt.Errorf("open Mach-O artifact: %w", err)
 	}
+	defer binary.Close()
+	if binary.Type != macho.TypeExec || !machoCPUIs(binary.Cpu, target.GOARCH) {
+		return Report{}, errors.New("Mach-O executable architecture does not match its target")
+	}
+	report.Format = "Mach-O"
 
 	build, err := buildinfo.ReadFile(path)
 	if err != nil {
@@ -137,8 +121,4 @@ func supportedTarget(target Target) bool {
 
 func machoCPUIs(cpu macho.Cpu, architecture string) bool {
 	return (architecture == "amd64" && cpu == macho.CpuAmd64) || (architecture == "arm64" && cpu == macho.CpuArm64)
-}
-
-func elfMachineIs(machine elf.Machine, architecture string) bool {
-	return (architecture == "amd64" && machine == elf.EM_X86_64) || (architecture == "arm64" && machine == elf.EM_AARCH64)
 }

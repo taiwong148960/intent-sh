@@ -84,9 +84,10 @@ func TestTrustedManualWorkflowKeepsCredentialsBehindProtectedBoundaries(t *testi
 	workflow := string(data)
 	for _, required := range []string{
 		"workflow_dispatch:",
-		"runs-on: [self-hosted, intent-sh-trusted]",
+		"runs-on: [self-hosted, macOS, intent-sh-trusted]",
 		"environment: trusted-qualification",
 		"persist-credentials: false",
+		`test "$(uname -s)" = Darwin`,
 		"make real-provider-test",
 		"make external-ssh-test",
 	} {

@@ -58,7 +58,7 @@ func TestRequiredBroadSuiteExcludesDedicatedIntegrationPackages(t *testing.T) {
 			t.Errorf("broad unit suite selects dedicated integration package %s", expectation.Package)
 		}
 	}
-	for _, dedicated := range []string{"native-pty", "tmux", "ssh-loopback", "external-ssh", "real-provider"} {
+	for _, dedicated := range []string{"native-pty", "tmux", "external-ssh", "real-provider"} {
 		if _, ok := manifest.Suites[dedicated]; !ok {
 			t.Errorf("manifest has no dedicated %s suite", dedicated)
 		}

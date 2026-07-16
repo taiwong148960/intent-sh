@@ -28,7 +28,7 @@ jobs:
   provider-smoke:
     name: protected manual / real provider
     if: inputs.provider != 'none'
-    runs-on: [self-hosted, intent-sh-trusted]
+    runs-on: [self-hosted, macOS, intent-sh-trusted]
     environment: trusted-qualification
     timeout-minutes: 10
     steps:
@@ -36,6 +36,8 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
+      - name: Verify approved macOS runner identity
+        run: test "$(uname -s)" = Darwin
       - name: Run one bounded authenticated smoke with no artifact publication
         env:
           PROVIDER_SELECTION: ${{ inputs.provider }}
@@ -50,7 +52,7 @@ jobs:
   external-ssh:
     name: protected manual / external SSH
     if: inputs.external_ssh_target != ''
-    runs-on: [self-hosted, intent-sh-trusted]
+    runs-on: [self-hosted, macOS, intent-sh-trusted]
     environment: trusted-qualification
     timeout-minutes: 45
     steps:
@@ -58,6 +60,8 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
+      - name: Verify approved macOS runner identity
+        run: test "$(uname -s)" = Darwin
       - name: Validate target and use only existing BatchMode and known-host state
         env:
           SSH_TARGET_INPUT: ${{ inputs.external_ssh_target }}

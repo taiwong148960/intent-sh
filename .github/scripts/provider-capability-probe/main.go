@@ -53,8 +53,9 @@ func main() {
 		"CODEX_HOME=" + codexHome,
 		"CLAUDE_CONFIG_DIR=" + claudeHome,
 		"TMPDIR=" + temporary,
-		"LANG=C.UTF-8",
-		"LC_ALL=C.UTF-8",
+		"LANG=en_US.UTF-8",
+		"LC_ALL=en_US.UTF-8",
+		"LC_CTYPE=en_US.UTF-8",
 		"PATH=" + filepath.Dir(*codexPath) + string(os.PathListSeparator) + filepath.Dir(*claudePath) + string(os.PathListSeparator) + os.Getenv("PATH"),
 	}
 	runner := provider.ProcessRunner{Env: environment}

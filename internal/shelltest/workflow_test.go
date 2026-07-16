@@ -1,7 +1,6 @@
 package shelltest
 
 import (
-	"debug/elf"
 	"debug/macho"
 	"errors"
 	"fmt"
@@ -901,6 +900,15 @@ func waitForShellExit(t *testing.T, shell *runningShell) {
 }
 
 func TestNativeEditorsUnicodeCursorRoundTripInPTY(t *testing.T) {
+	t.Setenv("LANG", "C")
+	t.Setenv("LC_ALL", "C")
+	t.Setenv("LC_CTYPE", "C")
+	utf8Locale := utf8TestLocale(t)
+	utf8Environment := map[string]string{
+		"LANG":     utf8Locale,
+		"LC_ALL":   utf8Locale,
+		"LC_CTYPE": utf8Locale,
+	}
 	root := repositoryRoot(t)
 	binDir := buildMVPTools(t, root)
 	cases := []struct {
@@ -922,7 +930,7 @@ func TestNativeEditorsUnicodeCursorRoundTripInPTY(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.shell.name, func(t *testing.T) {
 			requireCompatibleShell(t, tc.shell)
-			shell, home := startMVPShell(t, tc.shell, binDir, 5)
+			shell, home := startMVPShellConfigured(t, tc.shell, binDir, 5, config.ProviderCodex, []string{config.ProviderCodex, config.ProviderClaude}, utf8Environment)
 			defer shell.close(t)
 			shell.write(t, tc.setCursor)
 			shell.writeBytes(t, []byte{'\r'})
@@ -1030,29 +1038,17 @@ func copyPrebuiltBinary(t *testing.T, source, destination string) {
 }
 
 func validateNativeBinaryArchitecture(path string) error {
-	switch runtime.GOOS {
-	case "darwin":
-		file, err := macho.Open(path)
-		if err != nil {
-			return fmt.Errorf("open Mach-O executable: %w", err)
-		}
-		defer file.Close()
-		expected := map[string]macho.Cpu{"amd64": macho.CpuAmd64, "arm64": macho.CpuArm64}[runtime.GOARCH]
-		if expected == 0 || file.Cpu != expected {
-			return fmt.Errorf("Mach-O architecture does not match %s", runtime.GOARCH)
-		}
-	case "linux":
-		file, err := elf.Open(path)
-		if err != nil {
-			return fmt.Errorf("open ELF executable: %w", err)
-		}
-		defer file.Close()
-		expected := map[string]elf.Machine{"amd64": elf.EM_X86_64, "arm64": elf.EM_AARCH64}[runtime.GOARCH]
-		if expected == 0 || file.Machine != expected {
-			return fmt.Errorf("ELF architecture does not match %s", runtime.GOARCH)
-		}
-	default:
-		return fmt.Errorf("unsupported qualification host %s", runtime.GOOS)
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("qualification requires macOS")
+	}
+	file, err := macho.Open(path)
+	if err != nil {
+		return fmt.Errorf("open Mach-O executable: %w", err)
+	}
+	defer file.Close()
+	expected := map[string]macho.Cpu{"amd64": macho.CpuAmd64, "arm64": macho.CpuArm64}[runtime.GOARCH]
+	if expected == 0 || file.Cpu != expected {
+		return fmt.Errorf("Mach-O architecture does not match %s", runtime.GOARCH)
 	}
 	return nil
 }

@@ -8,14 +8,14 @@ This repository is an MVP. Its local safety checks reduce accidental risk; they 
 
 | Component | MVP support |
 | --- | --- |
-| Operating system | macOS or Linux |
-| Architecture | amd64/x86_64 or arm64/AArch64 |
+| Operating system | macOS |
+| Architecture | Apple silicon (`arm64`) or Intel (`amd64`/`x86_64`) |
 | Zsh | Supported; the stock macOS Zsh is suitable |
 | Bash 4.0 or newer | Supported through native Readline |
 | Bash older than 4.0 | Not supported |
 | Provider | At least one compatible, logged-in official Claude Code or Codex CLI |
 
-Windows, WSL, Fish, PowerShell, and other shells are outside the MVP compatibility contract.
+Only the documented Zsh and Bash backends are inside the MVP compatibility contract.
 
 For ZLE and Bash native Readline, a contract-compatible terminal environment must provide an interactive controlling PTY, deliver the configured rewrite and undo sequences plus CR or LF and `Ctrl+C`, support ordinary shell-editor repaint and resize, and keep the shell process alive for any claimed tmux reattach journey. `intent-sh` never selects code by terminal brand, `TERM`, `TERM_PROGRAM`, tmux, or SSH client identity.
 
@@ -25,7 +25,7 @@ Named terminal applications are not inferred to be qualified merely because they
 
 ### 1. Build from source
 
-Install Go 1.24 or newer, then build the single executable:
+On macOS, install Go 1.24 or newer, then build the single executable:
 
 ```sh
 git clone https://github.com/taiwong148960/intent-sh.git
@@ -42,7 +42,7 @@ Make sure `$HOME/.local/bin` is on `PATH`, then verify both versions:
 intent-sh version
 ```
 
-Go is used because the product needs one source-buildable binary with embedded shell adapters, strict typed contracts, and reliable Unix subprocess/process-group control. There is no daemon, database, desktop app, or hosted `intent-sh` service.
+Go is used because the product needs one source-buildable macOS binary with embedded shell adapters, strict typed contracts, and reliable process-group control. There is no daemon, database, desktop app, or hosted `intent-sh` service.
 
 ### 2. Install and sign in to one official provider
 
@@ -162,7 +162,7 @@ tmux needs no `intent-sh` plugin. When the outer terminal and tmux deliver the c
 
 If `doctor --keys` fails only inside tmux, inspect root-table bindings such as `tmux list-keys -T root` yourself. Remove or remap the conflicting tmux binding in your own configuration, or set a different allowed `intent-sh` chord and start a new shell. The repository's automated tmux suite uses a private `-L` server and an empty config; it never contacts the user's normal server. Detailed checks are in [the terminal qualification guide](docs/terminal-qualification.md).
 
-Inside SSH, everything that serves the rewrite is remote: the shell adapter, `intent-sh` binary, provider CLI, provider login, current directory, provider process, and generated target command. A provider installed or authenticated only on the client cannot serve the remote shell, and `intent-sh` does not forward provider credentials or requests to a client service. Remote model context contains only `remote: true`; SSH marker values and client terminal identity are excluded.
+Inside SSH between prepared macOS hosts, everything that serves the rewrite is remote: the shell adapter, `intent-sh` binary, provider CLI, provider login, current directory, provider process, and generated target command. A provider installed or authenticated only on the client cannot serve the remote shell, and `intent-sh` does not forward provider credentials or requests to a client service. Remote model context contains only `remote: true`; SSH marker values and client terminal identity are excluded.
 
 Losing a plain SSH connection normally terminates or hangs up that remote shell, so no recovery is promised. If the remote shell remains alive in remote tmux, reconnect and reattach to that same pane; surviving state belongs to that remote shell and requires no client-local state. The client and remote host need no shared `intent-sh` files beyond the ordinary terminal byte stream.
 
@@ -211,7 +211,7 @@ You are not trusting `intent-sh` with provider credentials, automatic command ex
 
 - automatic command execution or multi-step agents;
 - API-key management, OAuth, provider accounts, or a hosted backend;
-- Fish, PowerShell, Windows/WSL, Bash older than 4.0, or shells outside the documented Zsh/Bash backends;
+- Bash older than 4.0 or shells outside the documented Zsh/Bash backends;
 - selected-text rewriting, terminal-screen scraping, clipboard access, or global keystroke simulation;
 - reading project files, history, terminal output, or Git state to enrich prompts;
 - a desktop UI, daemon, database, telemetry, persistent logs, or command-history store;
@@ -254,11 +254,11 @@ Run the convenient local checks with:
 make check
 ```
 
-The merge gate is substantially broader. Required GitHub CI has stable read-only jobs for static integrity, unit and race tests, native Bash/Zsh PTYs, private-socket tmux, ephemeral loopback SSH and SSH-to-tmux, reproducible/cross/native artifacts, executable coverage, and the final `required / aggregate` status. Pull-request matrices fail on a missing prerequisite or unexpected skip; ordinary `make check` remains local-friendly.
+The merge gate is substantially broader. Required GitHub CI has stable read-only macOS jobs for static integrity, unit and race tests, native Bash/Zsh PTYs, private-socket tmux, reproducible Darwin artifacts, native artifact execution, inspection-only evidence for the other macOS architecture, executable coverage, and the final `required / aggregate` status. Required jobs fail on a missing prerequisite or unexpected skip; ordinary `make check` remains local-friendly.
 
-The required loopback SSH job owns a temporary localhost daemon, high port, account/home, host/client keys, strict known-host file, and client config; forwarding, passwords, agent/X11, tunnels, user environment, and user rc files are disabled, and an always-run step removes the whole job-owned namespace. A caller-owned external target is never used by pull-request CI. It is available only through protected manual dispatch or the local `external-ssh-test`, requires pre-existing BatchMode authentication and known-host state, creates no credential, and restricts cleanup to its validated remote `intent-sh-ssh.*` directory.
+Required CI never contacts an SSH target. It proves the opt-in, cleanup-path, forwarding, and privacy boundaries with local harness tests. End-to-end SSH is available only through protected manual dispatch or the local `external-ssh-test` against a prepared macOS target. The path requires pre-existing BatchMode authentication and known-host state, verifies Darwin and a supported architecture before staging, creates no credential, and restricts cleanup to its validated remote `intent-sh-ssh.*` directory.
 
-Weekly and manual scheduled qualification adds shuffled/repeated PTY and tmux runs, independent fuzz budgets, checksum-pinned Bash 4.0/5.3 and Zsh 5.8.1/5.9.1 source builds, Ubuntu glibc versions, native Linux arm64, unauthenticated pinned Claude/Codex capability checks without generation, and recorded vulnerability-database checks. Authenticated provider smoke and named GUI/integrated terminal qualification remain protected manual evidence; hosted PTY success never updates a dated named-terminal record.
+Weekly and manual scheduled qualification adds shuffled/repeated macOS PTY and tmux runs, independent fuzz budgets, checksum-pinned Bash 4.0/5.3 and Zsh 5.8.1/5.9.1 source builds, macOS architecture evidence, unauthenticated pinned Claude/Codex capability checks using the runner-native Darwin packages without generation, and recorded vulnerability-database checks. Authenticated provider smoke, prepared macOS SSH, and named GUI/integrated terminal qualification remain protected manual evidence; hosted PTY success never updates a dated named-terminal record.
 
 Common strict targets include:
 

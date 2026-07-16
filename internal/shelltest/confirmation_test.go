@@ -130,7 +130,7 @@ func startShellWithTerminalResponses(t *testing.T, tc shellCase, extraEnv map[st
 func startBashWithRCAndTerminalResponses(t *testing.T, tc shellCase, extraEnv map[string]string, bashrc string) *runningShell {
 	t.Helper()
 	rcPath := filepath.Join(t.TempDir(), "bashrc")
-	// Modern Linux Bash replaces an inherited PS1 with its default before it
+	// Interactive Bash replaces an inherited PS1 with its default before it
 	// reads an interactive rcfile. Set the marker there so every supported
 	// Bash version receives the same deterministic prompt.
 	rc := "PS1=" + shellQuote(promptMarker) + "\nPROMPT=" + shellQuote(promptMarker) + "\n" + bashrc + "\n"

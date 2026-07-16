@@ -1,136 +1,154 @@
+# Continuous Integration Qualification Specification
+
 ## Purpose
 
-Define the repository's deterministic, hermetic, cross-platform CI qualification contract and its trust, evidence, and reproducibility boundaries.
+Define the repository's deterministic, hermetic macOS CI contract and its trust, evidence, architecture, and reproducibility boundaries.
 
 ## Requirements
 
 ### Requirement: Maintain deterministic required qualification gates
-The repository SHALL run stable, explicitly named required checks for pull requests, merge-queue candidates, and changes pushed to the protected branch. Required suites MUST execute through dedicated targets, MUST fail when a mandatory prerequisite or test is unavailable, and MUST NOT treat an unexpected skip as successful qualification. A test case SHALL execute at most once in the required workflow unless a documented matrix dimension intentionally repeats it.
+The repository SHALL run stable, explicitly named macOS required checks for pull requests, merge-queue candidates, and changes pushed to the protected branch. Required suites MUST execute through dedicated targets, MUST fail when a mandatory local prerequisite or test is unavailable, and MUST NOT treat an unexpected skip as successful qualification. A test case SHALL execute at most once unless a documented shell, terminal, locale, or architecture dimension intentionally repeats it. External SSH and authenticated provider checks MUST remain outside the untrusted required graph.
 
 #### Scenario: Qualify a pull request
-- **WHEN** a pull request changes Go code, shell adapters, test harnesses, CI configuration, documentation, or OpenSpec artifacts
-- **THEN** every required static, unit, integration, and build gate runs under a stable check name and the change cannot qualify while any gate fails
+- **WHEN** a pull request changes source, adapters, tests, CI, documentation, or OpenSpec artifacts
+- **THEN** every required macOS static, unit, integration, and build gate runs under a stable check name and the change cannot qualify while any gate fails
 
-#### Scenario: Detect an unavailable integration prerequisite
-- **WHEN** a required PTY, shell, tmux, SSH, or artifact test cannot find its declared prerequisite
-- **THEN** its dedicated job fails with the missing capability instead of reporting a skipped or passing suite
+#### Scenario: Detect an unavailable prerequisite
+- **WHEN** a required PTY, shell, tmux, or artifact test cannot find its declared prerequisite on the macOS runner
+- **THEN** its dedicated job fails instead of reporting a skipped or passing suite
 
 #### Scenario: Partition overlapping suites
-- **WHEN** broad package tests and dedicated integration targets would select the same tmux, SSH, or provider test
-- **THEN** the workflow excludes the overlap or uses an explicit test manifest so each required matrix case runs exactly once
+- **WHEN** broad tests and dedicated integration targets could select the same tmux, remote-harness, or provider test
+- **THEN** the workflow excludes the overlap or uses an explicit manifest so each required case runs once
 
 ### Requirement: Verify source, specification, and workflow integrity
-Required validation SHALL check Go formatting, vet diagnostics, module checksums, a tidy module graph, Bash and Zsh syntax, shell lint, GitHub Actions syntax, strict OpenSpec validity, and supported target builds before qualification is considered complete. CI-only tools and third-party actions MUST be pinned reproducibly, and a generated or dependency-integrity difference MUST fail without rewriting the checkout.
+Required validation SHALL check Go formatting, vet diagnostics, module checksums, a tidy module graph, Bash and Zsh syntax, shell lint, GitHub Actions syntax, strict OpenSpec validity, the first-party macOS platform-scope audit, and both supported Darwin builds. CI-only tools and actions MUST be pinned reproducibly, and a generated or dependency-integrity difference MUST fail without rewriting the checkout.
 
 #### Scenario: Detect repository drift
-- **WHEN** source formatting, `go.mod`, `go.sum`, shell syntax, workflow syntax, or an OpenSpec artifact differs from its reproducible checked-in form
-- **THEN** a required integrity gate fails and reports the file or validation command without modifying the working tree
+- **WHEN** formatting, modules, shell syntax, workflow syntax, OpenSpec artifacts, or active platform scope differs from the checked-in contract
+- **THEN** a required integrity gate fails and identifies the file or validation command without modifying source
 
 #### Scenario: Validate all OpenSpec artifacts
-- **WHEN** CI validates the repository's specifications and active changes
-- **THEN** it runs strict validation over all applicable items and fails if any requirement, scenario, or planning artifact is invalid
+- **WHEN** CI validates specifications and active changes
+- **THEN** strict validation fails on any invalid requirement, scenario, or planning artifact
 
 #### Scenario: Resolve a CI dependency
-- **WHEN** a workflow invokes an external action, linter, or downloaded test fixture
-- **THEN** the invocation resolves from an immutable version or digest whose update is reviewable in the repository
+- **WHEN** a workflow invokes an external action, linter, or downloaded fixture
+- **THEN** it resolves from an immutable version or digest whose update is reviewable
 
 ### Requirement: Qualify native Bash and Zsh end to end
-Required integration jobs SHALL execute the built `intent-sh` binary with fake Claude and Codex providers inside real pseudo-terminals on macOS and Linux. The matrix SHALL exercise supported native Bash and Zsh editors with default and custom chords, CR and LF acceptance, representative `TERM` and locale values, Emacs and Vi editing where supported, Unicode cursors, terminal resize, regeneration, undo, clarification, routing failures, cancellation, session isolation, and safe, review, and dangerous no-auto-execution behavior.
+Required jobs SHALL execute the built binary with fake Claude and Codex providers inside real macOS pseudo-terminals. The matrix SHALL exercise native Bash and Zsh editors with default/custom chords, CR/LF, representative `TERM`, explicit `C` and verified UTF-8 locales, Emacs and Vi where supported, Unicode cursors, resize, regeneration, undo, clarification, routing failures, cancellation, session isolation, and all no-auto-execution risk behavior. Unicode journeys MUST NOT inherit locale categories from the launching shell.
 
-#### Scenario: Complete the native lifecycle on each operating system
-- **WHEN** required CI runs on macOS or Linux with its declared Bash and Zsh executables
-- **THEN** both shells complete the mandatory PTY lifecycle without accessing user startup files, provider credentials, terminal contents, or host configuration
+#### Scenario: Complete the native lifecycle on macOS
+- **WHEN** required CI runs with its declared Bash and Zsh executables
+- **THEN** both shells complete the mandatory lifecycle without accessing startup files, credentials, terminal contents, or host configuration
 
-#### Scenario: Cancel from a Linux Bash terminal
-- **WHEN** Linux Bash receives terminal `Ctrl+C` or the bounded signal-path test interrupts a slow fake provider
-- **THEN** the complete provider process tree stops, no fallback starts, the original buffer returns, terminal state is restored, and the shell remains usable
+#### Scenario: Cancel from native Bash
+- **WHEN** Bash receives terminal `Ctrl+C` or the bounded signal-path test interrupts a slow fake provider
+- **THEN** the process tree stops, fallback does not start, the original buffer returns, terminal state is restored, and the shell remains usable
 
-#### Scenario: Exercise editor and locale variants
-- **WHEN** the scheduled compatibility matrix selects a supported editor mode, shell version, terminal description, or locale
-- **THEN** the same buffer, cursor, confirmation, privacy, and no-auto-execution invariants hold for that declared variant
+#### Scenario: Convert a Zsh Unicode cursor deterministically
+- **WHEN** a Zsh journey places the editor cursor among multibyte and combining characters
+- **THEN** the harness supplies a verified UTF-8 locale and reports the protocol-2 byte offset independently of the parent locale
+
+#### Scenario: Exercise declared variants
+- **WHEN** scheduled qualification selects an editor mode, shell version, terminal description, or explicit locale
+- **THEN** the same buffer, cursor, confirmation, privacy, and no-auto-execution invariants hold
 
 ### Requirement: Qualify tmux hermetically
-Required integration jobs SHALL run the isolated tmux lifecycle on macOS and Linux. tmux tests MUST use a private socket and empty configuration, MUST qualify supported Bash 4.0+ native Readline and Zsh sessions, and MUST NOT inspect or mutate user state. CI MUST NOT maintain a fixture, cache, manifest suite, or required job for an unsupported Bash generation or alternate Bash editor.
+Required jobs SHALL run the isolated tmux lifecycle on macOS. Tests MUST use a private socket and empty configuration, MUST qualify Bash 4.0+ native Readline and Zsh, and MUST NOT inspect or mutate user state.
 
-#### Scenario: Reattach an isolated tmux client
-- **WHEN** the test client detaches and reattaches to a live Bash or Zsh pane
-- **THEN** editable-buffer and shell-local rewrite state survive only in that pane and the test leaves no private tmux server running
+#### Scenario: Reattach an isolated client
+- **WHEN** a client detaches and reattaches to a live Bash or Zsh pane
+- **THEN** editable-buffer and rewrite state survive only in that pane and no private server remains
 
-#### Scenario: Exclude removed shell fixtures
-- **WHEN** required CI constructs its shell and editor matrices
-- **THEN** it selects supported native Bash/Zsh cases only and contains no below-minimum Bash or alternate-editor fixture dependency
+#### Scenario: Exclude unsupported shell fixtures
+- **WHEN** CI constructs shell/editor matrices
+- **THEN** it selects supported native Bash/Zsh cases only
 
 ### Requirement: Qualify the SSH transport without external credentials
-A required Linux job SHALL create an ephemeral loopback OpenSSH server and run the remote Bash and Zsh conformance harness through the real SSH client and allocated PTY. The target, host keys, client key, known-host data, home, port, staged binaries, fake providers, and remote temporary directory MUST be isolated to the job and removed afterward. The job SHALL cover direct remote behavior and SSH-to-tmux detach and reattach without contacting an external host.
+Untrusted required CI SHALL prove that remote qualification is opt-in, preserves marker/provider privacy, validates cleanup paths, and contacts no target. End-to-end SSH and SSH-to-tmux SHALL run only in an authorized protected environment against a caller-owned target with existing BatchMode authentication and known-host state. The harness MUST verify Darwin and arm64/amd64 before staging, use supported remote shells, create one bounded disposable directory, and remove only that directory without changing SSH configuration, credentials, provider login, or macOS Remote Login settings.
 
-#### Scenario: Run loopback remote conformance
-- **WHEN** the loopback SSH target is ready
-- **THEN** remote Bash and Zsh complete rewrite, regenerate, undo, cancellation, review, dangerous confirmation, provider locality, privacy, and no-auto-execution checks with no client-side provider fallback
+#### Scenario: Run required CI without a target
+- **WHEN** the required graph evaluates the remote harness
+- **THEN** the opt-in guard passes without credential lookup, host contact, staging, or remote state
 
-#### Scenario: Disconnect a direct SSH session
-- **WHEN** the client disconnects while a non-tmux remote fake provider is active
-- **THEN** the bounded cleanup assertion detects no surviving staged provider process or target-command side effect and removes the remote test directory
+#### Scenario: Reject a target outside the boundary
+- **WHEN** a protected target does not report Darwin and a supported architecture
+- **THEN** qualification stops before staging or running the candidate and emits only a bounded incompatibility result
+
+#### Scenario: Run protected remote conformance
+- **WHEN** an authorized maintainer supplies a prepared macOS target with supported shells, tmux, PTY, authentication, and known-host state
+- **THEN** remote Bash/Zsh complete rewrite, regenerate, undo, cancellation, review, dangerous confirmation, locality, privacy, and no-auto-execution checks
+
+#### Scenario: Disconnect and clean a protected session
+- **WHEN** a protected journey completes or loses its connection
+- **THEN** cleanup attempts only the validated remote directory and reports no address, username, key, prompt, command, or terminal content
 
 #### Scenario: Reattach through SSH and tmux
-- **WHEN** the first SSH client detaches from a live remote tmux shell and a fresh client reconnects
-- **THEN** the same remote pane retains its shell-local state while a new pane has independent state and no client-local `intent-sh` state is required
+- **WHEN** a fresh client reconnects to a live remote tmux shell
+- **THEN** the same pane retains its shell-local state while new panes remain independent
 
 ### Requirement: Qualify supported build artifacts
-CI SHALL build `intent-sh` for macOS and Linux on amd64 and arm64 with reproducible build flags. Each runner SHALL execute the artifact native to that runner through version, adapter initialization, setup, doctor, configuration, and fake-provider PTY smoke journeys; non-native artifacts SHALL at least be inspected for the expected target format and architecture. Scheduled CI SHALL execute on additional native architectures when an appropriate runner is available.
+CI SHALL reproducibly build macOS amd64 and arm64 artifacts. A runner SHALL execute only its native artifact through version, initialization, setup, doctor, configuration, and fake-provider PTY journeys. The other artifact SHALL be inspected as Mach-O for CPU architecture, Go metadata, checksum, executable shape, embedded adapters, and bounded version metadata, with evidence labeled inspection rather than native qualification.
 
 #### Scenario: Smoke-test a native artifact
-- **WHEN** a runner builds an executable for its own operating system and architecture
-- **THEN** the produced file runs the declared command and interactive smoke journeys from a disposable home without relying on `go run` or a separately built development binary
+- **WHEN** a runner selects the artifact for its own macOS architecture
+- **THEN** it completes command and interactive journeys from disposable state without `go run` or another development binary
 
-#### Scenario: Inspect a cross-built artifact
-- **WHEN** CI cannot execute a supported cross-compiled target natively
-- **THEN** it verifies successful static construction, expected file format and architecture, embedded adapters, and bounded version metadata
+#### Scenario: Inspect the other macOS artifact
+- **WHEN** CI cannot execute the other architecture natively
+- **THEN** it verifies Mach-O construction, CPU type, adapters, and metadata without recording a native execution pass
 
-#### Scenario: Exercise activation and removal guidance
-- **WHEN** the native artifact is tested from a disposable installation prefix and home
-- **THEN** initialization, setup, custom configuration, downgrade cleanup, and removal guidance complete without modifying a real startup file or system shell
+#### Scenario: Exercise activation and removal
+- **WHEN** the native artifact runs from a disposable prefix and home
+- **THEN** initialization, setup, custom configuration, downgrade cleanup, and removal complete without modifying real user state
 
 ### Requirement: Detect races, order dependencies, fuzz failures, and coverage regressions
-Required CI SHALL run the Go race detector on the supported host platforms and SHALL enforce a documented coverage floor that includes the executable paths exercised by integration tests. Scheduled CI SHALL run logged-seed shuffle and repeat stress suites, bounded fuzz targets, minimum/current shell versions, representative Linux distributions, and available native architectures. A scheduled failure MUST remain visible and actionable rather than being converted into an unconditional retry success.
+Required CI SHALL run the race detector on macOS and enforce a documented coverage floor using unit, native PTY, and tmux executable paths. Scheduled CI SHALL run logged-seed stress, bounded independent fuzz targets, minimum/current Bash and Zsh source builds on macOS, and macOS architecture evidence. Scheduled failures MUST remain visible rather than being converted into retry success.
 
 #### Scenario: Detect a race or coverage regression
-- **WHEN** a change introduces a data race or lowers measured coverage below the checked-in policy
-- **THEN** the corresponding required gate fails with bounded diagnostic evidence
+- **WHEN** a change introduces a race or lowers measured macOS coverage below policy
+- **THEN** the corresponding required gate fails with bounded evidence
 
 #### Scenario: Reproduce a shuffled failure
-- **WHEN** a shuffled or repeated scheduled run fails
-- **THEN** CI records the seed, repetition, platform, architecture, and relevant tool versions needed to rerun the same case
+- **WHEN** stress fails
+- **THEN** CI records seed, repetition, macOS version, architecture, and relevant tool versions
 
 #### Scenario: Exercise fuzz targets
-- **WHEN** the scheduled fuzz workflow runs
-- **THEN** every registered fuzz target receives a bounded independent budget and any minimizing corpus artifact is retained without containing prompts, credentials, or terminal contents
+- **WHEN** scheduled fuzzing runs on macOS
+- **THEN** every registered target receives an independent bounded budget and retained metadata contains no prompts, credentials, or terminal contents
 
 ### Requirement: Isolate trusted and credentialed qualification
-Forked and ordinary pull-request workflows MUST run without provider credentials, external SSH credentials, writable repository tokens, or a `pull_request_target` path that executes untrusted checkout code. Authenticated real-provider smoke, user-supplied remote SSH qualification, and named GUI-terminal qualification SHALL run only through an explicitly authorized manual or protected environment and SHALL remain outside required untrusted pull-request gates.
+Pull-request workflows MUST run without provider credentials, external SSH credentials, writable tokens, or a `pull_request_target` path executing untrusted checkout code. Authenticated providers, caller-supplied macOS SSH, and named GUI-terminal qualification SHALL run only in an authorized protected/manual environment.
 
 #### Scenario: Run an untrusted pull request
-- **WHEN** CI evaluates code from a fork or otherwise untrusted source
-- **THEN** only fake providers and ephemeral local credentials are available, permissions remain read-only, and no external authenticated service is contacted
+- **WHEN** CI evaluates untrusted source
+- **THEN** only fake providers and local disposable state are available, permissions remain read-only, and no external authenticated service or SSH target is contacted
 
 #### Scenario: Run authenticated provider smoke
-- **WHEN** an authorized maintainer explicitly starts a real-provider qualification in a protected environment
-- **THEN** the existing bounded harmless smoke runs without uploading prompts, commands, model output, environment values, tokens, or credential files
+- **WHEN** a maintainer starts a protected macOS provider run
+- **THEN** the bounded harmless smoke uploads no prompt, command, model output, environment value, token, or credential file
+
+#### Scenario: Qualify a protected macOS remote
+- **WHEN** a maintainer starts external SSH qualification
+- **THEN** the workflow validates bounded input and Darwin identity before staging and uploads no host or credential material
 
 #### Scenario: Qualify a named terminal manually
-- **WHEN** a maintainer validates an actual GUI or integrated terminal that hosted CI cannot drive hermetically
-- **THEN** the dated qualification record is updated with bounded environment metadata while CI does not claim to have automated that terminal application
+- **WHEN** a maintainer validates an actual macOS GUI or integrated terminal
+- **THEN** the dated record receives bounded metadata without claiming hosted automation drove that application
 
 ### Requirement: Preserve bounded and privacy-safe CI evidence
-CI SHALL retain machine-readable pass, fail, skip, duration, matrix, and tool-version evidence needed to diagnose deterministic fake-provider tests. Required jobs MUST reject unexpected skips. Uploaded logs and artifacts MUST be bounded and terminal-safe and MUST NOT contain provider prompts, generated target commands from real services, raw terminal or pane contents, shell history, arbitrary environment values, SSH credentials, or provider credentials.
+CI SHALL retain machine-readable pass, fail, skip, duration, matrix, and tool-version evidence needed for deterministic tests. Required jobs MUST reject unexpected skips. Uploaded artifacts MUST be bounded and terminal-safe and MUST NOT contain prompts, generated target commands from real services, raw terminal/pane contents, history, arbitrary environment values, SSH credentials, or provider credentials.
 
-#### Scenario: Upload evidence for a failed fake-provider test
+#### Scenario: Upload failed fake-provider evidence
 - **WHEN** a deterministic required test fails
-- **THEN** CI retains its sanitized structured test result, declared matrix values, and bounded failure message for a documented retention period
+- **THEN** CI retains only its sanitized result, declared matrix values, and bounded phase for the documented retention period
 
 #### Scenario: Encounter prohibited evidence
-- **WHEN** an evidence producer receives a prompt, credential marker, unbounded PTY stream, or other prohibited value
-- **THEN** it redacts or omits that value and fails closed if safe evidence cannot be produced
+- **WHEN** an evidence producer receives prohibited material
+- **THEN** it omits that value and fails closed if safe evidence cannot be produced
 
 #### Scenario: Audit skipped tests
-- **WHEN** a required test command finishes with one or more skipped mandatory cases
-- **THEN** the evidence checker names those cases and fails the job even if the Go test process exited successfully
+- **WHEN** a required command reports a skipped mandatory case
+- **THEN** the evidence checker names the case and fails the job

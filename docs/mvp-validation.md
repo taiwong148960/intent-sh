@@ -24,7 +24,5 @@ The source builds with `CGO_ENABLED=0` for:
 
 - `darwin/amd64`
 - `darwin/arm64`
-- `linux/amd64`
-- `linux/arm64`
 
-Required CI runs the ordinary suite and cross-builds on hosted Ubuntu and macOS. Native Bash/Zsh PTY, private-socket tmux, loopback SSH, SSH-to-tmux, artifact, race, and executable-coverage jobs retain their strict manifest and cleanup boundaries. Real-provider compatibility is recorded in [provider-compatibility.md](provider-compatibility.md), and the security pass is recorded in [threat-review.md](threat-review.md).
+Required CI runs entirely on the explicit macOS runner. Native Bash/Zsh PTY, private-socket tmux, artifact, race, and executable-coverage jobs retain strict manifest and cleanup boundaries. Both Darwin artifacts are reproducibly built and inspected; only the runner-native artifact receives executable qualification. Required SSH checks contact no target, while prepared macOS SSH and authenticated provider compatibility remain protected manual paths. Provider evidence is recorded in [provider-compatibility.md](provider-compatibility.md), and the security pass is recorded in [threat-review.md](threat-review.md).

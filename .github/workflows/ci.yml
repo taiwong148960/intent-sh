@@ -22,7 +22,7 @@ env:
 jobs:
   static:
     name: required / static
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - name: Check out source
@@ -40,20 +40,14 @@ jobs:
           node-version: 20.19.0
           cache: npm
           cache-dependency-path: .github/ci-tools/package-lock.json
-      - name: Install Zsh for syntax validation
-        run: sudo apt-get update && sudo apt-get install --yes zsh
       - name: Run read-only integrity gates
         run: make static-check
 
 
   unit:
-    name: required / unit / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: required / unit
+    runs-on: macos-15
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -64,35 +58,25 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install required unit shells
+      - name: Install current Bash
         run: |
-          if [[ $RUNNER_OS == Linux ]]; then
-            sudo apt-get update
-            sudo apt-get install --yes zsh
-            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-          else
-            brew install bash
-            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
-          fi
+          brew install bash
+          echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
       - name: Run strict unit manifest
         run: make test-unit QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain sanitized failure summary
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: unit-${{ runner.os }}-summary
+          name: unit-${{ runner.arch }}-summary
           path: ${{ runner.temp }}/qualification
           if-no-files-found: ignore
           retention-days: 7
 
   race:
-    name: required / race / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: required / race
+    runs-on: macos-15
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -103,27 +87,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install required race-test shells
+      - name: Install current Bash
         run: |
-          if [[ $RUNNER_OS == Linux ]]; then
-            sudo apt-get update
-            sudo apt-get install --yes zsh
-            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-          else
-            brew install bash
-            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
-          fi
+          brew install bash
+          echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
       - name: Run race qualification
         run: make race-test
 
   native-pty:
-    name: required / native PTY / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: required / native PTY
+    runs-on: macos-15
     timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -134,43 +108,27 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install current Bash and Zsh
+      - name: Install current Bash
         run: |
-          if [[ $RUNNER_OS == Linux ]]; then
-            sudo apt-get update
-            sudo apt-get install --yes ncurses-term zsh
-            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-          else
-            brew install bash
-            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
-          fi
+          brew install bash
+          echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
       - name: Record bounded host and shell metadata
         run: bash .github/scripts/print-ci-metadata.sh
       - name: Run strict native PTY manifest
         run: make native-pty-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
-      - name: Repeat exact Linux cancellation phases without retries
-        if: runner.os == 'Linux'
-        env:
-          INTENT_SH_CI_STRICT: "1"
-          INTENT_SH_REQUIRE_GOARCH: amd64
-        run: go test ./internal/shelltest -run '^TestBashCancellationAndTeardownQualification/(terminal-byte|process-signal)$' -count=10
       - name: Retain sanitized failure summary
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: native-pty-${{ runner.os }}-summary
+          name: native-pty-${{ runner.arch }}-summary
           path: ${{ runner.temp }}/qualification
           if-no-files-found: ignore
           retention-days: 7
 
   tmux:
-    name: required / tmux / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: required / tmux
+    runs-on: macos-15
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -181,16 +139,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install current shells and tmux
+      - name: Install current Bash and tmux
         run: |
-          if [[ $RUNNER_OS == Linux ]]; then
-            sudo apt-get update
-            sudo apt-get install --yes ncurses-term tmux zsh
-            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-          else
-            brew install bash tmux
-            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
-          fi
+          brew install bash tmux
+          echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
           echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
       - name: Record bounded host and terminal metadata
         run: bash .github/scripts/print-ci-metadata.sh
@@ -200,53 +152,14 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: tmux-${{ runner.os }}-summary
-          path: ${{ runner.temp }}/qualification
-          if-no-files-found: ignore
-          retention-days: 7
-
-
-  loopback-ssh:
-    name: required / loopback SSH
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    steps:
-      - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-      - name: Set up Go from go.mod
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Install isolated SSH prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes ncurses-term openssh-client openssh-server tmux zsh
-          echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-          echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
-      - name: Start job-owned loopback SSH daemon
-        run: bash .github/scripts/setup-loopback-ssh.sh start
-      - name: Record bounded SSH host and shell metadata
-        run: bash .github/scripts/print-ci-metadata.sh
-      - name: Run strict remote, disconnect, and SSH-to-tmux manifest
-        run: make ssh-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
-      - name: Remove daemon, account, keys, processes, and job-owned state
-        if: always()
-        run: bash .github/scripts/setup-loopback-ssh.sh stop
-      - name: Retain sanitized failure summary
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: loopback-ssh-summary
+          name: tmux-${{ runner.arch }}-summary
           path: ${{ runner.temp }}/qualification
           if-no-files-found: ignore
           retention-days: 7
 
   artifact-build:
     name: required / reproducible artifacts
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - name: Check out source
@@ -272,9 +185,9 @@ jobs:
           compression-level: 0
 
   artifact-inspection:
-    name: required / cross-artifact inspection
+    name: required / inspected macOS artifacts
     needs: artifact-build
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 10
     steps:
       - name: Check out source
@@ -291,23 +204,18 @@ jobs:
         with:
           name: intent-sh-qualified-artifacts
           path: ${{ runner.temp }}/intent-sh-artifacts
-      - name: Restore executable transport bits and inspect every foreign target
+      - name: Restore executable transport bits and inspect both Mach-O artifacts
         env:
           ARTIFACT_DIR: ${{ runner.temp }}/intent-sh-artifacts
         run: |
           chmod 700 "$ARTIFACT_DIR"/intent-sh-darwin-amd64 "$ARTIFACT_DIR"/intent-sh-darwin-arm64
-          chmod 700 "$ARTIFACT_DIR"/intent-sh-linux-amd64 "$ARTIFACT_DIR"/intent-sh-linux-arm64
           make artifact-inspect
 
   artifact-native:
-    name: required / native artifact / ${{ matrix.os }}
+    name: required / native macOS artifact
     needs: artifact-build
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-15
     timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -318,16 +226,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install current native shells
+      - name: Install current Bash
         run: |
-          if [[ $RUNNER_OS == Linux ]]; then
-            sudo apt-get update
-            sudo apt-get install --yes ncurses-term zsh
-            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-          else
-            brew install bash
-            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
-          fi
+          brew install bash
+          echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
       - name: Download distributed qualification artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -335,13 +237,8 @@ jobs:
           path: ${{ runner.temp }}/intent-sh-artifacts
       - name: Select only this runner's artifact
         run: |
-          case "$RUNNER_OS" in
-            Linux) artifact_os=linux ;;
-            macOS) artifact_os=darwin ;;
-            *) echo "unsupported artifact runner OS: $RUNNER_OS" >&2; exit 1 ;;
-          esac
           artifact_arch=$(go env GOARCH)
-          artifact_path="$RUNNER_TEMP/intent-sh-artifacts/intent-sh-$artifact_os-$artifact_arch"
+          artifact_path="$RUNNER_TEMP/intent-sh-artifacts/intent-sh-darwin-$artifact_arch"
           test -f "$artifact_path" && test ! -L "$artifact_path"
           chmod 700 "$artifact_path"
           echo "INTENT_SH_TEST_BINARY=$artifact_path" >> "$GITHUB_ENV"
@@ -358,14 +255,14 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: artifact-native-${{ runner.os }}-summary
+          name: artifact-native-${{ runner.arch }}-summary
           path: ${{ runner.temp }}/qualification
           if-no-files-found: ignore
           retention-days: 7
 
   coverage:
     name: required / executable coverage
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 70
     steps:
       - name: Check out source
@@ -377,23 +274,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install PTY, tmux, and isolated SSH prerequisites
+      - name: Install current Bash and tmux
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes ncurses-term openssh-client openssh-server tmux zsh
-          echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          brew install bash tmux
+          echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
           echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
-      - name: Start job-owned loopback SSH daemon
-        run: bash .github/scripts/setup-loopback-ssh.sh start
-      - name: Record bounded coverage host, shell, tmux, and SSH metadata
+      - name: Record bounded coverage host, shell, and tmux metadata
         run: bash .github/scripts/print-ci-metadata.sh
-      - name: Run unit plus native, tmux, and SSH executable coverage
+      - name: Run unit plus native and tmux executable coverage
         env:
           COVERAGE_DIR: ${{ runner.temp }}/coverage
         run: make coverage-test
-      - name: Remove all loopback SSH coverage state
-        if: always()
-        run: bash .github/scripts/setup-loopback-ssh.sh stop
       - name: Retain only sanitized coverage and manifest failure summaries
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -408,8 +299,8 @@ jobs:
   aggregate:
     name: required / aggregate
     if: always()
-    needs: [static, unit, race, native-pty, tmux, loopback-ssh, artifact-build, artifact-inspection, artifact-native, coverage]
-    runs-on: ubuntu-latest
+    needs: [static, unit, race, native-pty, tmux, artifact-build, artifact-inspection, artifact-native, coverage]
+    runs-on: macos-15
     timeout-minutes: 5
     steps:
       - name: Require every deterministic qualification family

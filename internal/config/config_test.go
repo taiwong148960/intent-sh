@@ -13,11 +13,11 @@ import (
 )
 
 func TestPathFor(t *testing.T) {
-	got, err := PathFor("/home/alice", "")
-	if err != nil || got != "/home/alice/.config/intent-sh/config.toml" {
+	got, err := PathFor("/Users/alice", "")
+	if err != nil || got != "/Users/alice/.config/intent-sh/config.toml" {
 		t.Fatalf("PathFor() = %q, %v", got, err)
 	}
-	got, err = PathFor("/home/alice", "/tmp/xdg")
+	got, err = PathFor("/Users/alice", "/tmp/xdg")
 	if err != nil || got != "/tmp/xdg/intent-sh/config.toml" {
 		t.Fatalf("PathFor(XDG) = %q, %v", got, err)
 	}

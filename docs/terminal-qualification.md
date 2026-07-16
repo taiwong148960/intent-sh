@@ -1,18 +1,18 @@
-# Terminal qualification guide
+# macOS terminal qualification guide
 
-This guide validates the terminal-to-shell path without adding terminal-specific runtime code. A terminal environment is **contract-compatible** when it provides a controlling PTY, delivers the configured rewrite and undo sequences plus CR or LF and `Ctrl+C`, supports normal editor repaint/resize, and preserves the live shell for any claimed tmux reattach journey. It is **qualified** only after a maintainer completes this guide and adds a dated PASS record to [terminal-qualification-results.md](terminal-qualification-results.md).
+This guide validates the macOS terminal-to-shell path without adding terminal-specific runtime code. An environment is **contract-compatible** when it provides a controlling PTY, delivers the configured rewrite and undo sequences plus CR or LF and `Ctrl+C`, supports normal editor repaint/resize, and preserves the live shell for any claimed tmux reattach journey. It is **qualified** only after a maintainer completes this guide and adds a dated PASS record to [terminal-qualification-results.md](terminal-qualification-results.md).
 
-Do not record prompts, generated commands, terminal screenshots, scrollback, history, selections, clipboard contents, environment values, host addresses, usernames, paths containing personal data, tokens, credential locations, or provider output. Record only the bounded metadata and PASS/FAIL evidence in the template below.
+Record no prompts, generated commands, screenshots, scrollback, history, selections, clipboard contents, environment values, host addresses, usernames, personal paths, tokens, credential locations, or provider output. Keep only the bounded metadata and PASS/FAIL evidence in the template below.
 
 ## Prerequisites and scope
 
-- Use macOS or Linux on amd64 or arm64.
-- Use Zsh or Bash 4.0+ with its native editor for configurable-chord qualification.
-- Build the candidate `intent-sh` version and activate it in a new disposable shell. Have one official provider installed and logged in on the host where the shell runs.
+- Use macOS on Apple silicon or Intel.
+- Use Zsh or Bash 4.0+ with its native editor.
+- Build the candidate and activate it in a new disposable shell. Have one official provider installed and logged in on the Mac where the shell runs.
 - Use an empty, non-sensitive working directory. Never put a credential or private text in the editable buffer.
-- For a named terminal record, run the checks in that actual terminal application. Do not infer a GUI-terminal pass from the repository's pseudo-terminal tests.
+- Run named-terminal checks in that actual macOS application. Do not infer an application pass from repository pseudo-terminal tests.
 
-The runtime must not branch on the terminal name, `TERM`, tmux, or SSH client. Those values are qualification metadata only and are not provider context.
+Runtime behavior must not branch on terminal name, `TERM`, tmux, or SSH client. These are qualification metadata only and are not provider context.
 
 ## Automated baseline
 
@@ -25,83 +25,83 @@ make native-pty-test QUALIFICATION_DIR=/absolute/disposable/results
 make tmux-test QUALIFICATION_DIR=/absolute/disposable/results
 ```
 
-Required hosted PTY evidence covers Bash and Zsh, Emacs and Vi modes, default/custom chords, CR/LF, supported `TERM` values, `C` and UTF-8 locales, mixed English/Chinese and combining text, cursor positions, resize, provider failures, cancellation delivery modes, terminal closure/HUP, exact buffer restoration, regeneration, undo, safety acceptance, setup, downgrade, and removal. The tmux suite adds detach/reattach and pane/session isolation using a private explicit socket, mode-0700 directory, empty config, and no `capture-pane`.
+The required macOS PTY suite covers Bash and Zsh, Emacs and Vi modes, default/custom chords, CR/LF, representative `TERM` values, explicit `C` and verified UTF-8 locales, mixed English/Chinese and combining text, cursor positions, resize, provider failures, cancellation delivery modes, terminal closure, exact buffer restoration, regeneration, undo, safety acceptance, setup, downgrade, and removal. The tmux suite adds detach/reattach and pane/session isolation using a private socket, mode-0700 directory, empty config, and no pane capture.
 
-Required Linux CI also creates a job-owned loopback sshd with disposable account/home, high localhost port, temporary host/client keys, strict known hosts, disabled password/forwarding/user configuration, and always-run cleanup. That deterministic fixture runs the remote Bash/Zsh lifecycle, direct disconnect teardown, and SSH-to-tmux reconnect journey. It is not evidence for a caller-owned network or authentication path.
+Required CI contacts no SSH target. It verifies absent-target behavior, target and cleanup-path bounds, disabled forwarding, marker privacy, and Darwin remote-identity parsing locally. End-to-end remote evidence is protected/manual.
 
-On a prepared external target with existing BatchMode authentication and a known host key:
+For a prepared macOS target with existing BatchMode authentication and a known host key:
 
 ```sh
-INTENT_SH_TEST_SSH_TARGET=user@prepared-host make external-ssh-test
+INTENT_SH_TEST_SSH_TARGET=user@prepared-mac make external-ssh-test
 ```
 
-The external SSH harness installs nothing and creates no key, known-host entry, provider login, or daemon. It cross-builds an ephemeral candidate and fake providers locally, stages them under a mode-0700 remote temporary directory, clears the remote test environment, exercises the allocated SSH PTY, and removes the directory. A lost connection may prevent automatic cleanup; the failure reports the bounded test phase, and the maintainer should remove only a leftover directory named `intent-sh-ssh.*` under the remote temporary directory after verifying ownership. The protected manual workflow validates the target as one bounded host or `user@host` token, accepts no identity/port/option string, and uploads no SSH artifact.
+The harness first requires Darwin on arm64 or amd64. It installs nothing and creates no key, known-host entry, provider login, or daemon. It stages the candidate and fake providers under one mode-0700 remote temporary directory, supplies a verified UTF-8 locale, clears the remote test environment, exercises the allocated PTY, and removes that directory. A lost connection may prevent cleanup; after verifying ownership, remove only the reported `intent-sh-ssh.*` directory. The protected workflow accepts one bounded host or `user@host` token, accepts no identity/port/option string, and uploads no SSH artifact.
 
-Automated pseudo-terminal success proves adapter behavior after bytes reach a PTY. It does not identify Terminal.app, iTerm2, Warp, VS Code, xterm, an SSH client, or any other terminal application, and it never refreshes the dated named-environment records below. Complete the named journey in the actual application when terminal delivery itself is the qualification claim.
+Pseudo-terminal success proves behavior after bytes reach a PTY. It does not identify or qualify a named application. Complete the following journey in the actual application when key delivery itself is the claim.
 
-## Named terminal journey
+## Named macOS terminal journey
 
-Record the terminal/OS/architecture, shell version, `TERM`, configured chords, and candidate version before starting. Terminal identity is entered manually into the record; `intent-sh` does not detect or send it.
+Record the terminal application/version, macOS version/architecture, shell version, `TERM`, configured chords, and candidate version before starting.
 
-1. In a fresh supported shell, run `intent-sh setup zsh` or `intent-sh setup bash`. Confirm the effective bindings and exact removal line, and confirm the startup file was not changed.
+1. In a fresh supported shell, run `intent-sh setup zsh` or `intent-sh setup bash`. Confirm the effective bindings, selected startup file, exact removal line, and that the file was not changed.
 2. Activate the printed line in that disposable shell and run ordinary `intent-sh doctor`.
-3. Run `intent-sh doctor --keys`. Press rewrite, undo, Enter, and `Ctrl+C` only when prompted. Record the six stable `terminal.keys.*` IDs as PASS/FAIL, not the received bytes.
-4. Type a harmless intent such as `print the current working directory` without Enter. Press rewrite. Confirm the line changes but nothing executes. Press rewrite again and confirm regeneration still uses the original intent. Press undo and confirm exact restoration.
-5. Start another harmless rewrite and press `Ctrl+C` while generation is active. Confirm cancellation preserves the original line and does not start a fallback. If the provider returns too quickly, use the deterministic fake-provider PTY/SSH suite as cancellation evidence and mark the named-terminal cancellation observation NOT RUN rather than guessing.
-6. Put non-ASCII text in a harmless intent, move the cursor away from the end, and cause a local failure or cancellation. Confirm the complete text and a valid cursor position return.
-7. Start a harmless generation and resize the terminal while it is active. Confirm status repaint, one complete result at most, and no partial buffer replacement.
-8. For review acceptance, use a disposable directory and request creation of one marker file inside it. Confirm generation alone creates nothing; one deliberate Enter may execute the visible review command.
-9. For dangerous confirmation, create a new empty disposable directory and request deletion of that exact directory with recursive `rm`. Review the generated path carefully. Confirm generation creates no effect and the first Enter only warns. If and only if the visible command targets that disposable directory exactly, a second unchanged Enter may be used to verify native acceptance. Never use a real data path.
-10. Repeat the key probe and rewrite/undo checks with one allowed custom pair such as `ctrl+x` and `ctrl+r`, then restore `alt+g` and `alt+u`. Each change requires a new shell. Inside tmux, do not choose its current prefix (commonly `Ctrl+B`) unless you first change that tmux binding yourself.
+3. Run `intent-sh doctor --keys`. Press rewrite, undo, Enter, and `Ctrl+C` only when prompted. Record stable `terminal.keys.*` IDs, never received bytes.
+4. Type a harmless intent without Enter. Press rewrite and confirm only the editable line changes. Press rewrite again to confirm regeneration uses the original; press undo to confirm exact restoration.
+5. Start a harmless rewrite and press `Ctrl+C` while generation is active. Confirm the original line returns and fallback does not start. If the provider is too fast, mark the named observation NOT RUN and retain the deterministic test as separate evidence.
+6. Put non-ASCII text in a harmless intent, move the cursor away from the end, and cause a local failure or cancellation. Confirm complete text and a valid cursor return.
+7. Resize during a slow harmless generation. Confirm status repaint, at most one complete result, and no partial replacement.
+8. In a disposable directory, request creation of one marker. Confirm generation creates nothing; one deliberate Enter may execute the visible review command.
+9. In a new empty disposable directory, request deletion of exactly that directory. Confirm generation has no effect and the first Enter only warns. Use the second unchanged Enter only after verifying the visible path exactly.
+10. Repeat the key probe and harmless lifecycle with one allowed custom pair, then restore `alt+g` and `alt+u` in a new shell.
 
-A failure is evidence, not permission for the tool to edit terminal settings. Record FAIL, remediate manually, and rerun the entire affected journey.
+A failure is evidence, not permission to change terminal settings automatically. Record FAIL, remediate manually, and rerun the affected journey.
 
-## tmux journey and troubleshooting
+## tmux journey
 
-Run the named terminal journey first outside tmux, then inside a fresh user-created tmux session. Record the tmux version and inner `TERM`.
+Run the named journey first outside tmux, then inside a fresh user-created macOS tmux session. Record the tmux version and inner `TERM`.
 
-1. Run `intent-sh doctor --keys` inside tmux. If a key fails only there, inspect `tmux list-keys -T root` and the relevant prefix table yourself. A root binding may consume a Meta or Ctrl chord before `/dev/tty` receives it.
-2. Choose one manual remedy: remove/change the conflicting tmux binding in your own config, or run `intent-sh config set rewrite_key <allowed-chord>` (or `undo_key`) and start a new shell. `intent-sh` never applies either remedy.
-3. Generate a harmless command, detach without accepting it, reattach to the same live pane, and confirm the visible buffer plus rewrite/undo state remain. Undo must still restore the original.
-4. Generate a dangerous command against a disposable directory, press Enter once to arm it, detach, reattach, and confirm only the second unchanged Enter can accept it.
-5. Open another pane and another session. Confirm neither inherits the first shell's original buffer, rewrite index, undo state, or armed confirmation.
+1. Run `intent-sh doctor --keys`. If a chord fails only there, inspect `tmux list-keys -T root` and the relevant prefix table yourself.
+2. Either change the conflicting tmux binding in your own config or select another allowed `intent-sh` chord and start a new shell. `intent-sh` applies neither remedy.
+3. Generate a harmless command, detach without accepting it, reattach to the same live pane, and confirm the buffer and undo state survive.
+4. Arm a dangerous disposable-directory command with the first Enter, detach/reattach, and confirm only the second unchanged Enter can accept it.
+5. Open another pane and session; confirm neither inherits the first shell's rewrite or confirmation state.
 6. Resize during a slow harmless generation and confirm repaint without partial replacement.
 
-Do not use `capture-pane`, screenshots, scrollback export, shell history, or clipboard capture as evidence. A bounded PASS/FAIL row is sufficient.
+Do not use pane capture, screenshots, scrollback export, history, or clipboard capture as evidence.
 
-## SSH and SSH-to-tmux journey
+## macOS SSH and SSH-to-tmux journey
 
-The remote host must independently have a supported shell, the candidate `intent-sh` binary, and an official provider CLI with its own remote login. A client-only provider or login is intentionally unavailable to the remote adapter. Do not copy or forward provider credential files for qualification.
+The remote Mac must independently have a supported shell, the candidate binary, and an official provider CLI with its own remote login. A client-only provider or login is intentionally unavailable. Do not copy or forward credential files.
 
-1. Connect normally to the prepared remote host, activate the remote adapter, and run remote `intent-sh doctor` and `intent-sh doctor --keys`.
-2. Repeat rewrite, regenerate, undo, cancellation, resize, review, dangerous confirmation, custom-key, and no-auto-execution checks. The provider process and any marker directory must be remote.
-3. Disconnect a plain SSH session only after clearing test input. Treat that shell as terminated unless an external session manager keeps it alive; `intent-sh` promises no plain-SSH reconnection state.
-4. For the reattach case, start tmux on the remote host, generate a harmless command in a pane, detach tmux, end SSH, reconnect, and reattach to the same remote pane. Confirm the visible buffer and undo state survive. Repeat the first-danger-Enter reattach check only with a disposable remote directory.
-5. Confirm a new remote pane/session has independent state and that no client-local `intent-sh` process or provider is required.
+1. Connect normally, activate the remote adapter, and run remote `intent-sh doctor` and `intent-sh doctor --keys`.
+2. Repeat rewrite, regenerate, undo, cancellation, resize, review, dangerous confirmation, custom-key, and no-auto-execution checks. The provider process and marker directory must be remote.
+3. Treat a plain disconnected shell as terminated unless a separate session manager keeps it alive.
+4. For reattach evidence, run tmux remotely, generate harmless input, detach, end SSH, reconnect, and reattach to that pane. Confirm buffer and undo state survive. Use only a disposable remote directory for the armed-danger reattach check.
+5. Confirm a new remote pane/session has independent state and no client-local `intent-sh` process or provider is required.
 
-Record only a target label such as `prepared Linux VM`; do not record hostname, address, username, SSH marker values, key paths, provider account identifiers, prompts, or terminal contents.
+Record a non-identifying target label such as `prepared macOS test host`; never record its address, username, marker values, key paths, provider account, prompts, or terminal contents.
 
-## Downgrade, reset, and removal journey
+## Reset, downgrade, and removal
 
-Reset native bindings and open a new shell:
+Restore defaults and open a new shell:
 
 ```sh
 intent-sh config set rewrite_key alt+g
 intent-sh config set undo_key alt+u
 ```
 
-Before downgrading to a binary whose strict schema predates binding keys, remove the `rewrite_key` and `undo_key` lines from the secret-free TOML file. To remove the integration, delete the exact activation line reported by `intent-sh setup`, open a new shell, remove the binary, and optionally remove the config. No terminal or tmux setting should need rollback because `intent-sh` never modified one.
+Before downgrading to a strict schema that predates binding keys, remove the `rewrite_key` and `undo_key` lines from the secret-free TOML file. To remove the integration, delete the exact activation line reported by setup, open a new shell, remove the binary, and optionally remove the config. There is no terminal or tmux setting to roll back because `intent-sh` never modified one.
 
 ## Dated result template
 
-Copy this block into [terminal-qualification-results.md](terminal-qualification-results.md). Use `PASS`, `FAIL`, `NOT RUN`, or `SKIP`; never leave an ambiguous blank.
+Use `PASS`, `FAIL`, `NOT RUN`, or `SKIP`; never leave an ambiguous blank.
 
 ```text
 Date (YYYY-MM-DD):
 Maintainer:
-Category: macOS system | macOS additional | Linux desktop | cross-platform/GPU | integrated | tmux | SSH
+Category: macOS system | macOS additional | macOS integrated | macOS tmux | macOS SSH
 Terminal application/version:
-OS/version:
+macOS version:
 Architecture: amd64 | arm64
 Shell/version: zsh ... | bash ...
 Layer: direct | tmux <version> | SSH target label | SSH + tmux <version>
@@ -130,4 +130,4 @@ Overall: PASS|FAIL|NOT RUN
 Bounded note (no prompt, command, path, address, credential, or terminal content):
 ```
 
-A category may be described as qualified only when its representative row is Overall PASS. When key handling, Enter guarding, cancellation, adapter repaint, or configuration grammar changes, refresh affected rows or label them as evidence for the older version.
+A category is qualified only when its representative row is Overall PASS. Refresh affected rows whenever key parsing, adapter registration, Enter guarding, cancellation, or repaint behavior changes.

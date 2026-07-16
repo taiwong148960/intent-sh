@@ -5,7 +5,7 @@
       "tier": "required",
       "description": "Every top-level Test or Fuzz seed in these packages is a required unit test.",
       "prerequisites": ["go"],
-      "matrix": ["ubuntu", "macos"],
+      "matrix": ["darwin"],
       "expected": [
         {"package": "github.com/taiwong148960/intent-sh/internal/app", "name": "*"},
         {"package": "github.com/taiwong148960/intent-sh/internal/apperr", "name": "*"},
@@ -32,11 +32,12 @@
       "tier": "required",
       "description": "Repository-owned tmux and SSH harness safety tests that do not open an integration session.",
       "prerequisites": ["go"],
-      "matrix": ["ubuntu", "macos"],
+      "matrix": ["darwin"],
       "expected": [
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestQualificationStrictFlagIsExplicit"},
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxHarnessUsesPrivateSocketEnvironmentAndCleanInnerShell"},
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHHarnessRejectsUnsafeCleanupPathsAndDisablesForwarding"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHRemotePlatformBoundary"},
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHSmokeHarnessSkipsWithoutExplicitTarget"},
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHMarkerValuesRemainOutsideLocalProviderBoundaries"}
       ]
@@ -45,7 +46,7 @@
       "tier": "required",
       "description": "Native Bash and Zsh PTY lifecycle, safety, setup, terminal, and editor conformance.",
       "prerequisites": ["go", "bash>=4", "zsh", "pty"],
-      "matrix": ["ubuntu", "macos"],
+      "matrix": ["darwin"],
       "expected": [
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestDangerousConfirmationInPTY"},
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestOrdinaryCommandUsesOneEnter"},
@@ -64,7 +65,7 @@
       "tier": "required",
       "description": "Private-socket tmux lifecycle, detach/reattach, isolation, and intercepted-binding conformance.",
       "prerequisites": ["go", "bash>=4", "zsh", "tmux", "pty"],
-      "matrix": ["ubuntu", "macos"],
+      "matrix": ["darwin"],
       "expected": [
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxHarnessUsesPrivateSocketEnvironmentAndCleanInnerShell"},
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxLifecycleMatrix"},
@@ -72,22 +73,11 @@
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxInterceptedRootBindingFailsKeyDeliveryDiagnostic"}
       ]
     },
-    "ssh-loopback": {
-      "tier": "required",
-      "description": "Ephemeral loopback OpenSSH Bash and Zsh remote lifecycle conformance.",
-      "prerequisites": ["go", "openssh-client", "openssh-server", "bash>=4", "zsh", "pty"],
-      "matrix": ["ubuntu"],
-      "expected": [
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHRemoteBashAndZshConformance"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHDirectDisconnectReapsRemoteProvider"},
-        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHToTmuxReconnectStateAndPaneIsolation"}
-      ]
-    },
     "ssh-opt-in-guard": {
       "tier": "required",
       "description": "Ordinary test runs prove that SSH conformance remains explicitly opt-in.",
       "prerequisites": ["go"],
-      "matrix": ["ubuntu", "macos"],
+      "matrix": ["darwin"],
       "expected": [
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHSmokeHarnessSkipsWithoutExplicitTarget"}
       ]
@@ -107,7 +97,7 @@
       "tier": "required",
       "description": "The same native PTY contract executed against the separately built release-path executable.",
       "prerequisites": ["go", "prebuilt-intent-sh", "bash>=4", "zsh", "pty"],
-      "matrix": ["ubuntu", "macos"],
+      "matrix": ["darwin"],
       "expected": [
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestDangerousConfirmationInPTY"},
         {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestOrdinaryCommandUsesOneEnter"},
@@ -126,7 +116,7 @@
       "tier": "scheduled",
       "description": "Bounded key-chord parser fuzzing.",
       "prerequisites": ["go"],
-      "matrix": ["ubuntu"],
+      "matrix": ["darwin"],
       "expected": [
         {"package": "github.com/taiwong148960/intent-sh/internal/keychord", "name": "FuzzParse"}
       ]
@@ -144,7 +134,7 @@
       "tier": "scheduled",
       "description": "Bounded recursive-deletion classifier fuzzing.",
       "prerequisites": ["go"],
-      "matrix": ["ubuntu"],
+      "matrix": ["darwin"],
       "expected": [
         {"package": "github.com/taiwong148960/intent-sh/internal/safety", "name": "FuzzRecursiveDeletionCannotHideBehindWrappers"}
       ]

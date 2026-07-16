@@ -12,11 +12,7 @@ fail() {
 
 sha256_file() {
     local output
-    if command -v sha256sum >/dev/null 2>&1; then
-        output=$(sha256sum "$1")
-    else
-        output=$(shasum -a 256 "$1")
-    fi
+    output=$(shasum -a 256 "$1")
     printf '%s\n' "${output%%[[:space:]]*}"
 }
 
@@ -34,18 +30,6 @@ case "$os/$arch" in
         shellcheck_sha256=c2c15e08df0e8fbc374c335b230a7ee958c313fa5714817a59aa59f1aa594f51
         actionlint_platform=darwin_amd64
         actionlint_sha256=5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644
-        ;;
-    Linux/aarch64|Linux/arm64)
-        shellcheck_platform=linux.aarch64
-        shellcheck_sha256=68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc
-        actionlint_platform=linux_arm64
-        actionlint_sha256=325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6
-        ;;
-    Linux/x86_64)
-        shellcheck_platform=linux.x86_64
-        shellcheck_sha256=b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6
-        actionlint_platform=linux_amd64
-        actionlint_sha256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
         ;;
     *) fail "CI linters do not have a pinned archive for $os/$arch" ;;
 esac

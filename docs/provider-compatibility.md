@@ -2,7 +2,7 @@
 
 Provider evidence has three separate trust tiers. Required CI uses deterministic fake executables to cover unavailable binaries, feature/login failure, timeout and fallback, malformed or excessive output, crashes, explicit-provider no-fallback, cancellation, process-tree reaping, and temporary-workspace cleanup. Scheduled CI installs the exact integrity-locked `@openai/codex` 0.144.4 and `@anthropic-ai/claude-code` 2.1.210 packages into an empty home, verifies the required flags, and requires the expected login-not-ready result; it never generates a model request or reads a credential.
 
-The real-provider smoke remains opt-in because it contacts the configured provider service. It runs only locally or in the manually dispatched `Trusted Manual Qualification` workflow on a protected `[self-hosted, intent-sh-trusted]` runner and `trusted-qualification` environment. It uses the runner's existing official login, runs from a disposable directory, and emits only provider name, bounded compatible version, and pass/fail through the structured auditor. No authenticated log artifact is uploaded.
+The real-provider smoke remains opt-in because it contacts the configured provider service. It runs only locally on macOS or in the manually dispatched `Trusted Manual Qualification` workflow on a protected `[self-hosted, macOS, intent-sh-trusted]` runner and `trusted-qualification` environment. It uses the runner's existing official login, runs from a disposable directory, and emits only provider name, bounded compatible version, and pass/fail through the structured auditor. No authenticated log artifact is uploaded.
 
 Run one or both providers with:
 

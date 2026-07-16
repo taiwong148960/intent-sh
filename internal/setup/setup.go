@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 
@@ -46,7 +45,6 @@ type Plan struct {
 type Options struct {
 	Home        string
 	ZDOTDIR     string
-	GOOS        string
 	Exists      func(string) bool
 	ReadBounded func(string, int) ([]byte, error)
 }
@@ -67,7 +65,6 @@ func InspectDefaultWithBindings(shell, rewriteValue, undoValue string) (Plan, er
 	return InspectWithBindings(shell, Options{
 		Home:        home,
 		ZDOTDIR:     os.Getenv("ZDOTDIR"),
-		GOOS:        runtime.GOOS,
 		Exists:      regularFileExists,
 		ReadBounded: readBoundedRegularFile,
 	}, rewriteValue, undoValue)
@@ -86,9 +83,6 @@ func InspectWithBindings(shell string, options Options, rewriteValue, undoValue 
 	}
 	if strings.TrimSpace(options.Home) == "" {
 		return Plan{}, apperr.New(apperr.KindConfiguration, "prepare setup", "HOME is unset")
-	}
-	if options.GOOS == "" {
-		options.GOOS = runtime.GOOS
 	}
 	if options.Exists == nil {
 		options.Exists = regularFileExists
@@ -143,19 +137,14 @@ func startupFile(shell string, options Options) string {
 		return filepath.Join(base, ".zshrc")
 	}
 
-	candidates := []string{".bashrc", ".bash_profile", ".bash_login", ".profile"}
-	defaultName := ".bashrc"
-	if options.GOOS == "darwin" {
-		candidates = []string{".bash_profile", ".bash_login", ".profile", ".bashrc"}
-		defaultName = ".bash_profile"
-	}
+	candidates := []string{".bash_profile", ".bash_login", ".profile", ".bashrc"}
 	for _, name := range candidates {
 		path := filepath.Join(options.Home, name)
 		if options.Exists(path) {
 			return path
 		}
 	}
-	return filepath.Join(options.Home, defaultName)
+	return filepath.Join(options.Home, ".bash_profile")
 }
 
 func detectConflicts(shell, content string, rewrite, undo keychord.Chord) []Conflict {

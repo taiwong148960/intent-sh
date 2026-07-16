@@ -41,11 +41,12 @@ var (
 // bundle, installs no package or credential, and removes the remote directory
 // on completion.
 type sshSmokeHarness struct {
-	path       string
-	target     string
-	options    []string
-	remoteRoot string
-	coverage   bool
+	path         string
+	target       string
+	options      []string
+	architecture string
+	locale       string
+	remoteRoot   string
 }
 
 func newSSHSmokeHarness(t *testing.T) *sshSmokeHarness {
@@ -62,8 +63,7 @@ func newSSHSmokeHarness(t *testing.T) *sshSmokeHarness {
 		t.Fatal("ssh is required when INTENT_SH_TEST_SSH_TARGET is set")
 	}
 	configPath := strings.TrimSpace(os.Getenv("INTENT_SH_TEST_SSH_CONFIG"))
-	loopback := os.Getenv("INTENT_SH_TEST_SSH_LOOPBACK") == "1"
-	if err := validateSSHConfigPath(configPath, os.Getenv("RUNNER_TEMP"), loopback); err != nil {
+	if err := validateSSHConfigPath(configPath); err != nil {
 		t.Fatalf("validate INTENT_SH_TEST_SSH_CONFIG: %v", err)
 	}
 	options := sshSafetyOptions()
@@ -75,6 +75,8 @@ func newSSHSmokeHarness(t *testing.T) *sshSmokeHarness {
 		target:  target,
 		options: options,
 	}
+	harness.architecture = harness.remoteArchitecture(t)
+	harness.locale = harness.remoteUTF8Locale(t)
 	remoteRoot := strings.TrimSpace(harness.output(t, `umask 077; base=${TMPDIR:-/tmp}; base=${base%/}; d=$(mktemp -d "$base/intent-sh-ssh.XXXXXX") || exit 1; printf '%s\n' "$d"`))
 	if !safeRemoteTempPath(remoteRoot) {
 		t.Fatalf("remote mktemp returned an unsafe path")
@@ -87,11 +89,8 @@ func newSSHSmokeHarness(t *testing.T) *sshSmokeHarness {
 	return harness
 }
 
-func validateSSHConfigPath(value, runnerTemp string, requireLoopback bool) error {
+func validateSSHConfigPath(value string) error {
 	if value == "" {
-		if requireLoopback {
-			return errors.New("the loopback fixture requires its generated client configuration")
-		}
 		return nil
 	}
 	if !sshPathPattern.MatchString(value) || filepath.Clean(value) != value {
@@ -103,15 +102,6 @@ func validateSSHConfigPath(value, runnerTemp string, requireLoopback bool) error
 	}
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 || info.Size() == 0 || info.Size() > 16<<10 {
 		return errors.New("path must name a private, bounded regular file")
-	}
-	if requireLoopback {
-		if !sshPathPattern.MatchString(runnerTemp) || filepath.Clean(runnerTemp) != runnerTemp || runnerTemp == "/" {
-			return errors.New("RUNNER_TEMP is outside the loopback fixture boundary")
-		}
-		expected := filepath.Join(runnerTemp, "intent-sh-loopback-ssh", "client_config")
-		if value != expected {
-			return errors.New("loopback client configuration is outside the job-owned state directory")
-		}
 	}
 	return nil
 }
@@ -249,23 +239,44 @@ func (harness *sshSmokeHarness) waitForPath(t *testing.T, path string, timeout t
 	}
 }
 
-func (harness *sshSmokeHarness) remotePlatform(t *testing.T) (string, string) {
-	t.Helper()
-	fields := strings.Fields(harness.output(t, `uname -s; uname -m`))
+func parseRemoteArchitecture(output string) (string, error) {
+	fields := strings.Fields(output)
 	if len(fields) != 2 {
-		t.Fatal("remote uname output was not recognized")
+		return "", errors.New("remote uname output was not recognized")
 	}
-	goos := map[string]string{"Darwin": "darwin", "Linux": "linux"}[fields[0]]
-	goarch := map[string]string{"x86_64": "amd64", "amd64": "amd64", "arm64": "arm64", "aarch64": "arm64"}[fields[1]]
-	if goos == "" || goarch == "" {
-		t.Fatalf("remote platform %s/%s is outside the supported SSH smoke boundary", fields[0], fields[1])
+	if fields[0] != "Darwin" {
+		return "", errors.New("remote operating system is outside the macOS boundary")
 	}
-	return goos, goarch
+	goarch := map[string]string{"x86_64": "amd64", "arm64": "arm64"}[fields[1]]
+	if goarch == "" {
+		return "", errors.New("remote architecture is outside the supported macOS boundary")
+	}
+	return goarch, nil
+}
+
+func (harness *sshSmokeHarness) remoteArchitecture(t *testing.T) string {
+	t.Helper()
+	goarch, err := parseRemoteArchitecture(harness.output(t, `uname -s; uname -m`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return goarch
+}
+
+func (harness *sshSmokeHarness) remoteUTF8Locale(t *testing.T) string {
+	t.Helper()
+	for _, candidate := range []string{"en_US.UTF-8", "UTF-8"} {
+		command := "env LANG=" + shellQuote(candidate) + " LC_ALL=" + shellQuote(candidate) + " locale charmap 2>/dev/null || true"
+		if strings.EqualFold(strings.TrimSpace(harness.output(t, command)), "UTF-8") {
+			return candidate
+		}
+	}
+	qualificationSkipf(t, "remote macOS target does not provide a verified UTF-8 locale")
+	return ""
 }
 
 func (harness *sshSmokeHarness) stage(t *testing.T, root string) {
 	t.Helper()
-	goos, goarch := harness.remotePlatform(t)
 	bundle := t.TempDir()
 	binDir := filepath.Join(bundle, "bin")
 	if err := os.MkdirAll(binDir, 0o700); err != nil {
@@ -277,7 +288,7 @@ func (harness *sshSmokeHarness) stage(t *testing.T, root string) {
 	} else {
 		build := exec.Command("go", "build", "-trimpath", "-o", intentBinary, "./cmd/intent-sh")
 		build.Dir = root
-		build.Env = replaceEnvironment(os.Environ(), map[string]string{"CGO_ENABLED": "0", "GOOS": goos, "GOARCH": goarch})
+		build.Env = replaceEnvironment(os.Environ(), map[string]string{"CGO_ENABLED": "0", "GOOS": "darwin", "GOARCH": harness.architecture})
 		if output, err := build.CombinedOutput(); err != nil {
 			t.Fatalf("build remote intent-sh test binary: %v: %s", err, output)
 		}
@@ -291,20 +302,12 @@ func (harness *sshSmokeHarness) stage(t *testing.T, root string) {
 	cfg.Provider = config.ProviderAuto
 	cfg.Priority = []string{provider.NameClaude, provider.NameCodex}
 	cfg.TimeoutSeconds = 5
-	if err := config.WriteAt(filepath.Join(bundle, "home", "xdg", "intent-sh", "config.toml"), cfg); err != nil {
+	if err := config.WriteAt(filepath.Join(bundle, "user-home", "xdg", "intent-sh", "config.toml"), cfg); err != nil {
 		t.Fatalf("write remote smoke config: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(bundle, "empty-tmux.conf"), nil, 0o600); err != nil {
 		t.Fatalf("write remote empty tmux configuration: %v", err)
 	}
-	coverageDirectory := qualificationCoverageDirectory(t)
-	if coverageDirectory != "" {
-		if err := os.Mkdir(filepath.Join(bundle, "coverage"), 0o700); err != nil {
-			t.Fatalf("create remote executable coverage directory: %v", err)
-		}
-		harness.coverage = true
-	}
-
 	archive, err := exec.Command("tar", "-C", bundle, "-cf", "-", ".").Output()
 	if err != nil {
 		t.Fatalf("archive SSH smoke bundle: %v", err)
@@ -315,72 +318,6 @@ func (harness *sshSmokeHarness) stage(t *testing.T, root string) {
 	upload.Stderr = &stderr
 	if err := upload.Run(); err != nil {
 		t.Fatalf("stage ephemeral SSH smoke bundle: %v: %s", err, harness.boundedError(stderr.String()))
-	}
-	if coverageDirectory != "" {
-		t.Cleanup(func() { harness.downloadCoverage(t, coverageDirectory) })
-	}
-}
-
-func qualificationCoverageDirectory(t *testing.T) string {
-	t.Helper()
-	value := strings.TrimSpace(os.Getenv("INTENT_SH_COVERAGE_DIR"))
-	if value == "" {
-		return ""
-	}
-	if os.Getenv("INTENT_SH_TEST_SSH_LOOPBACK") != "1" {
-		t.Fatal("remote executable coverage is restricted to the job-owned loopback SSH fixture")
-	}
-	if !sshPathPattern.MatchString(value) || filepath.Clean(value) != value {
-		t.Fatal("INTENT_SH_COVERAGE_DIR must be one bounded absolute path")
-	}
-	info, err := os.Lstat(value)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		t.Fatal("INTENT_SH_COVERAGE_DIR must be a real existing directory")
-	}
-	return value
-}
-
-func (harness *sshSmokeHarness) downloadCoverage(t *testing.T, localDirectory string) {
-	t.Helper()
-	remoteDirectory := harness.remoteRoot + "/coverage"
-	unsafeEntry := strings.TrimSpace(harness.output(t, "find "+shellQuote(remoteDirectory)+" -mindepth 1 -maxdepth 1 ! -type f -print -quit"))
-	if unsafeEntry != "" {
-		t.Fatal("remote executable coverage contained a non-regular entry")
-	}
-	listing := strings.Fields(harness.output(t, "find "+shellQuote(remoteDirectory)+" -mindepth 1 -maxdepth 1 -type f -exec basename {} \\;"))
-	if len(listing) == 0 || len(listing) > 1000 {
-		t.Fatal("remote executable coverage file count is outside its bound")
-	}
-	namePattern := regexp.MustCompile(`^cov(?:meta|counters)\.[a-f0-9.]{16,200}$`)
-	parts := []string{"cd", shellQuote(remoteDirectory), "&&", "tar", "-cf", "-", "--"}
-	for _, name := range listing {
-		if !namePattern.MatchString(name) {
-			t.Fatal("remote executable coverage returned an unsafe filename")
-		}
-		parts = append(parts, shellQuote(name))
-	}
-	remote := harness.command(false, strings.Join(parts, " "))
-	local := exec.Command("tar", "-xf", "-", "-C", localDirectory)
-	pipe, err := remote.StdoutPipe()
-	if err != nil {
-		t.Fatal("prepare remote coverage transfer")
-	}
-	local.Stdin = pipe
-	var remoteError, localError bytes.Buffer
-	remote.Stderr = &remoteError
-	local.Stderr = &localError
-	if err := local.Start(); err != nil {
-		t.Fatal("start local coverage extraction")
-	}
-	if err := remote.Start(); err != nil {
-		_ = local.Process.Kill()
-		_ = local.Wait()
-		t.Fatal("start remote coverage transfer")
-	}
-	remoteRunErr := remote.Wait()
-	localRunErr := local.Wait()
-	if remoteRunErr != nil || localRunErr != nil {
-		t.Fatalf("transfer bounded remote executable coverage: remote=%s local=%s", harness.boundedError(remoteError.String()), boundedTestOutput(localError.String()))
 	}
 }
 
@@ -443,35 +380,31 @@ func TestSSHHarnessRejectsUnsafeCleanupPathsAndDisablesForwarding(t *testing.T) 
 			t.Fatalf("safeRemoteTempPath(%q) = true", invalid)
 		}
 	}
-	runnerTemp := t.TempDir()
-	configDirectory := filepath.Join(runnerTemp, "intent-sh-loopback-ssh")
-	if err := os.Mkdir(configDirectory, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	configDirectory := t.TempDir()
 	configPath := filepath.Join(configDirectory, "client_config")
-	if err := os.WriteFile(configPath, []byte("Host intent-sh-loopback\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("Host approved-target\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateSSHConfigPath(configPath, runnerTemp, true); err != nil {
-		t.Fatalf("valid loopback config was rejected: %v", err)
+	if err := validateSSHConfigPath(configPath); err != nil {
+		t.Fatalf("valid private config was rejected: %v", err)
 	}
-	for _, invalid := range []string{"relative", configPath + "/child", filepath.Join(runnerTemp, "client_config")} {
-		if err := validateSSHConfigPath(invalid, runnerTemp, true); err == nil {
-			t.Fatalf("unsafe loopback config %q was accepted", invalid)
+	for _, invalid := range []string{"relative", configPath + "/child"} {
+		if err := validateSSHConfigPath(invalid); err == nil {
+			t.Fatalf("unsafe SSH config %q was accepted", invalid)
 		}
 	}
 	worldReadable := filepath.Join(configDirectory, "world-readable")
 	if err := os.WriteFile(worldReadable, []byte("Host bad\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateSSHConfigPath(worldReadable, runnerTemp, false); err == nil {
+	if err := validateSSHConfigPath(worldReadable); err == nil {
 		t.Fatal("world-readable SSH config was accepted")
 	}
 	symlinkPath := filepath.Join(configDirectory, "symlink")
 	if err := os.Symlink(configPath, symlinkPath); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateSSHConfigPath(symlinkPath, runnerTemp, false); err == nil {
+	if err := validateSSHConfigPath(symlinkPath); err == nil {
 		t.Fatal("symlink SSH config was accepted")
 	}
 	target := strings.TrimSpace(os.Getenv("INTENT_SH_TEST_SSH_TARGET"))
@@ -487,13 +420,35 @@ func TestSSHHarnessRejectsUnsafeCleanupPathsAndDisablesForwarding(t *testing.T) 
 	}
 }
 
+func TestSSHRemotePlatformBoundary(t *testing.T) {
+	for _, testCase := range []struct {
+		output string
+		want   string
+	}{
+		{output: "Darwin arm64", want: "arm64"},
+		{output: "Darwin x86_64", want: "amd64"},
+	} {
+		got, err := parseRemoteArchitecture(testCase.output)
+		if err != nil || got != testCase.want {
+			t.Fatalf("parseRemoteArchitecture(%q) = %q, %v; want %q", testCase.output, got, err, testCase.want)
+		}
+	}
+	for _, output := range []string{"invalid arm64", "Darwin invalid", "Darwin", ""} {
+		if got, err := parseRemoteArchitecture(output); err == nil {
+			t.Fatalf("parseRemoteArchitecture(%q) = %q, nil; want rejection", output, got)
+		}
+	}
+}
+
 func (harness *sshSmokeHarness) remoteShellEnvironment(shellPath string) map[string]string {
-	remoteHome := harness.remoteRoot + "/home"
+	remoteHome := harness.remoteRoot + "/user-home"
 	environment := map[string]string{
 		"DATABASE_URL":            sshCredentialMarker,
 		"HOME":                    remoteHome,
 		"INTENT_PRIVATE_SENTINEL": sshCredentialMarker,
-		"LANG":                    "C.UTF-8",
+		"LANG":                    harness.locale,
+		"LC_ALL":                  harness.locale,
+		"LC_CTYPE":                harness.locale,
 		"PATH":                    harness.remoteRoot + "/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
 		"PROMPT":                  promptMarker,
 		"PS1":                     promptMarker,
@@ -502,9 +457,6 @@ func (harness *sshSmokeHarness) remoteShellEnvironment(shellPath string) map[str
 		"TERM":                    "xterm-256color",
 		"TERM_PROGRAM":            sshClientTermMarker,
 		"XDG_CONFIG_HOME":         remoteHome + "/xdg",
-	}
-	if harness.coverage {
-		environment["GOCOVERDIR"] = harness.remoteRoot + "/coverage"
 	}
 	return environment
 }
@@ -643,14 +595,14 @@ func (harness *sshSmokeHarness) assertPromptPrivacy(t *testing.T, promptPath str
 			t.Fatalf("remote provider input included prohibited marker %s", forbidden)
 		}
 	}
-	if harness.pathExists(t, harness.remoteRoot+"/home/claude-env-leaked") {
+	if harness.pathExists(t, harness.remoteRoot+"/user-home/claude-env-leaked") {
 		t.Fatal("SSH or credential marker reached the remote provider process environment")
 	}
 }
 
 func (harness *sshSmokeHarness) assertProviderTreeStopped(t *testing.T) {
 	t.Helper()
-	pidPath := harness.remoteRoot + "/home/claude-provider-pid"
+	pidPath := harness.remoteRoot + "/user-home/claude-provider-pid"
 	if !harness.pathExists(t, pidPath) {
 		t.Fatal("remote cancellation did not record the fake provider process tree")
 	}
@@ -813,7 +765,7 @@ func TestSSHToTmuxReconnectStateAndPaneIsolation(t *testing.T) {
 	})
 	matrix := newTerminalConformanceCase(t, shellCase{name: "zsh"}, "alt+g", "alt+u", "screen-256color", []byte{'\r'}, 36, 120)
 	original := "SSH-TMUX-INTENT_CASE_SAFE_7Q"
-	dangerMarker := harness.remoteRoot + "/home/danger-ran"
+	dangerMarker := harness.remoteRoot + "/user-home/danger-ran"
 	runSSHPhase(t, "safe-rewrite", func(t *testing.T) {
 		client.write(t, "intent-sh config set provider codex >/dev/null")
 		client.writeBytes(t, matrix.enter)
@@ -872,7 +824,7 @@ func TestSSHToTmuxReconnectStateAndPaneIsolation(t *testing.T) {
 		client.readUntilTimeout(t, "generated one", 30*time.Second)
 		assertShellState(t, client, "printf GEN_ONE", len("printf GEN_ONE"), "NEW-PANE-INTENT_CASE_SAFE_7Q", 0, "safe")
 		client.close(t)
-		harness.assertPromptPrivacy(t, harness.remoteRoot+"/home/codex-last-prompt")
+		harness.assertPromptPrivacy(t, harness.remoteRoot+"/user-home/codex-last-prompt")
 	})
 }
 
