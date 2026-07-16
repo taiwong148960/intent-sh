@@ -39,9 +39,9 @@ func TestRealProviderSmoke(t *testing.T) {
 			defer cancel()
 			probe, err := adapter.Probe(ctx)
 			if err != nil {
-				t.Fatalf("%s compatibility/login probe failed: %v", name, err)
+				t.Fatalf("provider=%s result=FAIL", name)
 			}
-			t.Logf("%s compatible CLI version: %s", name, textsafe.Terminal(probe.Version, 120))
+			t.Logf("provider=%s version=%s result=PASS", name, textsafe.Terminal(probe.Version, 120))
 
 			promptText, err := prompt.Build(prompt.Input{
 				Buffer: "Print the current working directory with the single harmless read-only command pwd.",
@@ -56,20 +56,20 @@ func TestRealProviderSmoke(t *testing.T) {
 			}
 			value, err := adapter.Generate(ctx, provider.Request{Prompt: promptText, Timeout: 90 * time.Second})
 			if err != nil {
-				t.Fatalf("%s harmless generation failed: %v", name, err)
+				t.Fatalf("provider=%s result=FAIL", name)
 			}
 			if value.Status != protocol.ProviderStatusOK {
-				t.Fatalf("%s returned a non-command smoke result", name)
+				t.Fatalf("provider=%s result=FAIL", name)
 			}
 			decision, err := (safety.Engine{}).Evaluate(ctx, value.Command, safety.ShellZsh, value.RiskHint)
 			if err != nil {
-				t.Fatalf("%s smoke command failed local validation: %v", name, err)
+				t.Fatalf("provider=%s result=FAIL", name)
 			}
 			if decision.Level != safety.LevelSafe {
-				t.Fatalf("%s smoke command was not locally read-only", name)
+				t.Fatalf("provider=%s result=FAIL", name)
 			}
 			if _, err := os.Stat(marker); !os.IsNotExist(err) {
-				t.Fatalf("%s caused target-command side effects: %v", name, err)
+				t.Fatalf("provider=%s result=FAIL", name)
 			}
 		})
 	}

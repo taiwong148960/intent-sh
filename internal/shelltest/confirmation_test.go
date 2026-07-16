@@ -99,10 +99,10 @@ func TestEditingDisarmsDangerousFingerprint(t *testing.T) {
 func TestBash32WithoutBleshFailsBeforeBinding(t *testing.T) {
 	path, err := exec.LookPath("/bin/bash")
 	if err != nil {
-		t.Skip("system Bash is not available")
+		qualificationSkipf(t, "system Bash is not available")
 	}
 	if major := bashMajor(t, path); major >= 4 {
-		t.Skipf("system Bash is %d, not an incompatible version", major)
+		qualificationSkipf(t, "system Bash is %d, not an incompatible version", major)
 	}
 	script := filepath.Join(repositoryRoot(t), "shell", "bash", "intent-sh.bash")
 	command := fmt.Sprintf("source %s; status=$?; bind -s; printf 'STATUS:%%s BACKEND:%%s READY:%%s FAILURE:%%s\\n' \"$status\" \"$INTENT_SH_ADAPTER_BACKEND\" \"$INTENT_SH_ADAPTER_READY\" \"$INTENT_SH_ADAPTER_FAILURE\"", shellQuote(script))
@@ -129,6 +129,7 @@ type runningShell struct {
 	pending                string
 	name                   string
 	respondTerminalQueries bool
+	clearSequence          []byte
 }
 
 type terminalPTYOptions struct {
@@ -136,6 +137,7 @@ type terminalPTYOptions struct {
 	rows                   uint16
 	cols                   uint16
 	respondTerminalQueries bool
+	startupTimeout         time.Duration
 }
 
 func startShell(t *testing.T, tc shellCase) *runningShell {
@@ -153,11 +155,18 @@ func startShellWithTerminalResponses(t *testing.T, tc shellCase, extraEnv map[st
 func startBashWithRCAndTerminalResponses(t *testing.T, tc shellCase, extraEnv map[string]string, bashrc string) *runningShell {
 	t.Helper()
 	rcPath := filepath.Join(t.TempDir(), "bashrc")
-	if err := os.WriteFile(rcPath, []byte(bashrc+"\n"), 0o600); err != nil {
+	// Modern Linux Bash replaces an inherited PS1 with its default before it
+	// reads an interactive rcfile. Set the marker in the rcfile so ble.sh
+	// captures the same deterministic prompt on every supported Bash version.
+	rc := "PS1=" + shellQuote(promptMarker) + "\nPROMPT=" + shellQuote(promptMarker) + "\n" + bashrc + "\n"
+	if err := os.WriteFile(rcPath, []byte(rc), 0o600); err != nil {
 		t.Fatalf("write Bash test rcfile: %v", err)
 	}
 	tc.args = []string{"--noprofile", "--rcfile", rcPath, "-i"}
-	return startShellWithOptions(t, tc, extraEnv, "", true)
+	return startShellWithPTYOptions(t, tc, extraEnv, "", terminalPTYOptions{
+		respondTerminalQueries: true,
+		startupTimeout:         30 * time.Second,
+	})
 }
 
 func startShellWithOptions(t *testing.T, tc shellCase, extraEnv map[string]string, initialize string, respondTerminalQueries bool) *runningShell {
@@ -168,7 +177,7 @@ func startShellWithPTYOptions(t *testing.T, tc shellCase, extraEnv map[string]st
 	t.Helper()
 	path, err := exec.LookPath(tc.executable)
 	if err != nil {
-		t.Skipf("%s is not installed", tc.executable)
+		qualificationSkipf(t, "%s is not installed", tc.executable)
 	}
 	cmd := exec.Command(path, tc.args...)
 	if options.term == "" {
@@ -180,7 +189,15 @@ func startShellWithPTYOptions(t *testing.T, tc shellCase, extraEnv map[string]st
 	if options.cols == 0 {
 		options.cols = 240
 	}
+	if options.startupTimeout == 0 {
+		options.startupTimeout = 5 * time.Second
+	}
 	environment := map[string]string{"PS1": promptMarker, "PROMPT": promptMarker, "TERM": options.term}
+	if coverageDirectory, err := qualificationExecutableCoverageDirectory(); err != nil {
+		t.Fatal(err)
+	} else if coverageDirectory != "" {
+		environment["GOCOVERDIR"] = coverageDirectory
+	}
 	for key, value := range extraEnv {
 		environment[key] = value
 	}
@@ -192,11 +209,11 @@ func startShellWithPTYOptions(t *testing.T, tc shellCase, extraEnv map[string]st
 	_ = pty.Setsize(file, &pty.Winsize{Rows: options.rows, Cols: options.cols})
 	shell := &runningShell{cmd: cmd, file: file, chunks: make(chan []byte, 32), readErr: make(chan error, 1), name: tc.name, respondTerminalQueries: options.respondTerminalQueries}
 	go shell.readLoop()
-	shell.readUntil(t, promptMarker)
+	shell.readUntilTimeout(t, promptMarker, options.startupTimeout)
 	if initialize != "" {
 		shell.write(t, initialize)
 		shell.writeBytes(t, []byte{'\r'})
-		shell.readUntil(t, promptMarker)
+		shell.readUntilTimeout(t, promptMarker, options.startupTimeout)
 	}
 	return shell
 }
@@ -360,10 +377,10 @@ func requireCompatibleShell(t *testing.T, tc shellCase) {
 	if tc.name == "bash" {
 		path, err := exec.LookPath(tc.executable)
 		if err != nil {
-			t.Skipf("%s is not installed", tc.executable)
+			qualificationSkipf(t, "%s is not installed", tc.executable)
 		}
 		if major := bashMajor(t, path); major < 4 {
-			t.Skipf("Bash %d is intentionally incompatible; set INTENT_SH_TEST_BASH to Bash 4.0+", major)
+			qualificationSkipf(t, "Bash %d is intentionally incompatible; set INTENT_SH_TEST_BASH to Bash 4.0+", major)
 		}
 	}
 }

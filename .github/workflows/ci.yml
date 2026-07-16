@@ -1,142 +1,537 @@
-name: CI
+name: Required CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: required-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  GOTOOLCHAIN: local
+  GOFLAGS: -mod=readonly
+  OPENSPEC_TELEMETRY: "0"
+
 jobs:
-  verify:
-    name: ${{ matrix.os }}
+  static:
+    name: required / static
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set up exact Node for locked CI tooling
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20.19.0
+          cache: npm
+          cache-dependency-path: .github/ci-tools/package-lock.json
+      - name: Install Zsh for syntax validation
+        run: sudo apt-get update && sudo apt-get install --yes zsh
+      - name: Run read-only integrity gates
+        run: make static-check
+
+  fixture-installer:
+    name: required / fixture installer / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Verify network-free fixture publication and cache repair
+        run: make blesh-fixture-test
 
+  unit:
+    name: required / unit / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
       - name: Set up Go from go.mod
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
+      - name: Install required unit shells
+        run: |
+          if [[ $RUNNER_OS == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes zsh
+            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          else
+            brew install bash
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
+          fi
+      - name: Run strict unit manifest
+        run: make test-unit QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Retain sanitized failure summary
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-${{ runner.os }}-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
 
-      - name: Install Zsh and tmux on Ubuntu
+  race:
+    name: required / race / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install required race-test shells
+        run: |
+          if [[ $RUNNER_OS == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes zsh
+            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          else
+            brew install bash
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
+          fi
+      - name: Run race qualification
+        run: make race-test
+
+  native-pty:
+    name: required / native PTY / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install current Bash and Zsh
+        run: |
+          if [[ $RUNNER_OS == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes ncurses-term zsh
+            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          else
+            brew install bash
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
+          fi
+      - name: Record bounded host and shell metadata
+        run: bash .github/scripts/print-ci-metadata.sh
+      - name: Run strict native PTY manifest
+        run: make native-pty-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Repeat exact Linux cancellation phases without retries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes zsh tmux
+        env:
+          INTENT_SH_CI_STRICT: "1"
+          INTENT_SH_REQUIRE_GOARCH: amd64
+        run: go test ./internal/shelltest -run '^TestBashCancellationAndTeardownQualification/(terminal-byte|process-signal)$' -count=10
+      - name: Retain sanitized failure summary
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-pty-${{ runner.os }}-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
 
-      - name: Select modern Bash on Ubuntu
-        if: runner.os == 'Linux'
-        run: echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-
-      - name: Install tmux and select modern Bash on macOS
-        if: runner.os == 'macOS'
-        run: |
-          brew install bash tmux
-          echo "INTENT_SH_TEST_BASH=$(brew --prefix)/bin/bash" >> "$GITHUB_ENV"
-
-      - name: Check formatting
-        run: make fmt-check
-
-      - name: Vet packages
-        run: make vet
-
-      - name: Check adapter syntax
-        run: make shell-check
-
-      - name: Run unit, fake-provider, and PTY suites
-        run: go test ./... -count=1
-
-      - name: Run isolated tmux qualification explicitly
-        run: make tmux-test
-
-      - name: Verify SSH qualification remains opt-in
-        run: env -u INTENT_SH_TEST_SSH_TARGET go test ./internal/shelltest -run '^TestSSH' -count=1 -v
-
-      - name: Prove stock macOS Bash 3.2 fails closed without ble.sh
-        if: runner.os == 'macOS'
-        run: |
-          /bin/bash --version
-          INTENT_SH_TEST_BASH32=/bin/bash go test ./internal/shelltest \
-            -run '^(TestBash32WithoutBleshFailsBeforeBinding|TestBash32MissingBleshIsInertInPTY)$' \
-            -count=1 -v
-
-      - name: Build amd64 and arm64 binaries
-        run: |
-          case "$RUNNER_OS" in
-            Linux) target_os=linux ;;
-            macOS) target_os=darwin ;;
-            *) exit 1 ;;
-          esac
-          for arch in amd64 arm64; do
-            CGO_ENABLED=0 GOOS="$target_os" GOARCH="$arch" \
-              go build -trimpath -o "$RUNNER_TEMP/intent-sh-$target_os-$arch" ./cmd/intent-sh
-          done
-
-  blesh:
-    name: pinned ble.sh / ${{ matrix.os }}
+  tmux:
+    name: required / tmux / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
-
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
       - name: Set up Go from go.mod
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Install ble.sh build dependencies on Ubuntu
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes gawk zsh
-
-      - name: Install modern Bash and GNU awk on macOS
-        if: runner.os == 'macOS'
-        run: brew install bash gawk
-
-      - name: Select Bash test executables
+      - name: Install current shells and tmux
         run: |
-          if [[ $RUNNER_OS == macOS ]]; then
-            echo "INTENT_SH_TEST_BASH=$(brew --prefix)/bin/bash" >> "$GITHUB_ENV"
-            echo "INTENT_SH_TEST_BASH32=/bin/bash" >> "$GITHUB_ENV"
-          else
+          if [[ $RUNNER_OS == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes ncurses-term tmux zsh
             echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          else
+            brew install bash tmux
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
           fi
-
-      - name: Restore pinned ble.sh test artifact
-        uses: actions/cache@v5
+          echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
+      - name: Record bounded host and terminal metadata
+        run: bash .github/scripts/print-ci-metadata.sh
+      - name: Run strict private-socket tmux manifest
+        run: make tmux-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Retain sanitized failure summary
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          path: ${{ runner.temp }}/intent-sh-blesh
-          key: blesh-${{ runner.os }}-d69e4d549a1881a37300fe6b4a05478bd9157dfc-${{ hashFiles('.github/scripts/install-blesh-test.sh') }}
+          name: tmux-${{ runner.os }}-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
 
-      - name: Verify, build, and select pinned ble.sh
-        env:
-          INTENT_SH_TEST_BLESH_CACHE: ${{ runner.temp }}/intent-sh-blesh
-        run: bash .github/scripts/install-blesh-test.sh
+  bash32-negative:
+    name: required / stock Bash 3.2 fail closed
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Select stock Bash 3.2
+        run: echo 'INTENT_SH_TEST_BASH32=/bin/bash' >> "$GITHUB_ENV"
+      - name: Run strict fail-closed negative manifest
+        run: make bash32-negative-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Retain sanitized failure summary
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bash32-negative-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
 
-      - name: Run stock macOS Bash 3.2 ble.sh matrix
-        if: runner.os == 'macOS'
-        run: go test ./internal/shelltest -run '^(TestBlesh|TestBash32)' -count=1 -v
-
-      - name: Run modern Bash native and ble.sh matrix
+  blesh:
+    name: required / ble.sh / ${{ matrix.suite }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            suite: blesh-modern
+            bash32: false
+          - os: macos-latest
+            suite: blesh-modern
+            bash32: false
+          - os: ubuntu-latest
+            suite: blesh-bash32
+            bash32: true
+          - os: macos-latest
+            suite: blesh-bash32
+            bash32: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install build and shell prerequisites
         run: |
-          go test ./internal/shelltest \
-            -run '^(TestModernBashNativeAndBleshAcceptanceContract|TestNativeEditorsUnicodeCursorRoundTripInPTY/bash)$' \
-            -count=1 -v
+          if [[ $RUNNER_OS == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes build-essential gawk zsh
+            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          else
+            brew install bash gawk
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
+          fi
+      - name: Restore Linux Bash 3.2 build cache
+        if: runner.os == 'Linux' && matrix.bash32
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ runner.temp }}/intent-sh-bash32
+          key: bash32-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/ci/bash32-fixture.env', '.github/scripts/install-bash32-test.sh') }}
+      - name: Select pinned Bash 3.2
+        if: matrix.bash32
+        env:
+          INTENT_SH_TEST_BASH32_CACHE: ${{ runner.temp }}/intent-sh-bash32
+        run: bash .github/scripts/install-bash32-test.sh
+      - name: Build complete pinned ble.sh from an empty cache
+        env:
+          INTENT_SH_TEST_BLESH_CACHE: ${{ runner.temp }}/intent-sh-blesh-empty
+        run: bash .github/scripts/install-blesh-test.sh
+      - name: Verify restored ble.sh fixture without rebuilding
+        env:
+          INTENT_SH_TEST_BLESH_CACHE: ${{ runner.temp }}/intent-sh-blesh-empty
+        run: bash .github/scripts/install-blesh-test.sh
+      - name: Record bounded Bash, ble.sh, and fixture metadata
+        env:
+          INTENT_SH_TEST_BLESH_CACHE: ${{ runner.temp }}/intent-sh-blesh-empty
+        run: bash .github/scripts/print-ci-metadata.sh
+      - name: Run strict full ble.sh manifest
+        run: make blesh-test BLESH_SUITE=${{ matrix.suite }} QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Retain sanitized failure summary
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: blesh-${{ matrix.suite }}-${{ runner.os }}-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
+
+  loopback-ssh:
+    name: required / loopback SSH
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install isolated SSH prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ncurses-term openssh-client openssh-server tmux zsh
+          echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
+      - name: Start job-owned loopback SSH daemon
+        run: bash .github/scripts/setup-loopback-ssh.sh start
+      - name: Record bounded SSH host and shell metadata
+        run: bash .github/scripts/print-ci-metadata.sh
+      - name: Run strict remote, disconnect, and SSH-to-tmux manifest
+        run: make ssh-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Remove daemon, account, keys, processes, and job-owned state
+        if: always()
+        run: bash .github/scripts/setup-loopback-ssh.sh stop
+      - name: Retain sanitized failure summary
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: loopback-ssh-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
+
+  artifact-build:
+    name: required / reproducible artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build each target twice and inspect its embedded protocol
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/intent-sh-artifacts
+        run: make artifact-build artifact-inspect
+      - name: Distribute only the workflow-internal qualification artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: intent-sh-qualified-artifacts
+          path: ${{ runner.temp }}/intent-sh-artifacts
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  artifact-inspection:
+    name: required / cross-artifact inspection
+    needs: artifact-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Download distributed qualification artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: intent-sh-qualified-artifacts
+          path: ${{ runner.temp }}/intent-sh-artifacts
+      - name: Restore executable transport bits and inspect every foreign target
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/intent-sh-artifacts
+        run: |
+          chmod 700 "$ARTIFACT_DIR"/intent-sh-darwin-amd64 "$ARTIFACT_DIR"/intent-sh-darwin-arm64
+          chmod 700 "$ARTIFACT_DIR"/intent-sh-linux-amd64 "$ARTIFACT_DIR"/intent-sh-linux-arm64
+          make artifact-inspect
+
+  artifact-native:
+    name: required / native artifact / ${{ matrix.os }}
+    needs: artifact-build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install current native shells
+        run: |
+          if [[ $RUNNER_OS == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes ncurses-term zsh
+            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          else
+            brew install bash
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
+          fi
+      - name: Download distributed qualification artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: intent-sh-qualified-artifacts
+          path: ${{ runner.temp }}/intent-sh-artifacts
+      - name: Select only this runner's artifact
+        run: |
+          case "$RUNNER_OS" in
+            Linux) artifact_os=linux ;;
+            macOS) artifact_os=darwin ;;
+            *) echo "unsupported artifact runner OS: $RUNNER_OS" >&2; exit 1 ;;
+          esac
+          artifact_arch=$(go env GOARCH)
+          artifact_path="$RUNNER_TEMP/intent-sh-artifacts/intent-sh-$artifact_os-$artifact_arch"
+          test -f "$artifact_path" && test ! -L "$artifact_path"
+          chmod 700 "$artifact_path"
+          echo "INTENT_SH_TEST_BINARY=$artifact_path" >> "$GITHUB_ENV"
+      - name: Verify bounded version and embedded adapters
+        run: |
+          "$INTENT_SH_TEST_BINARY" version
+          "$INTENT_SH_TEST_BINARY" init bash | grep -F -q '__intent_sh_protocol_version=2'
+          "$INTENT_SH_TEST_BINARY" init zsh | grep -F -q '__intent_sh_protocol_version=2'
+      - name: Record bounded host and shell metadata
+        run: bash .github/scripts/print-ci-metadata.sh
+      - name: Run install, setup, doctor, rewrite, safety, downgrade, and removal journeys
+        run: make artifact-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Retain sanitized failure summary
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: artifact-native-${{ runner.os }}-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
+
+  coverage:
+    name: required / executable coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install PTY, tmux, and isolated SSH prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ncurses-term openssh-client openssh-server tmux zsh
+          echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
+      - name: Start job-owned loopback SSH daemon
+        run: bash .github/scripts/setup-loopback-ssh.sh start
+      - name: Record bounded coverage host, shell, tmux, and SSH metadata
+        run: bash .github/scripts/print-ci-metadata.sh
+      - name: Run unit plus native, tmux, and SSH executable coverage
+        env:
+          COVERAGE_DIR: ${{ runner.temp }}/coverage
+        run: make coverage-test
+      - name: Remove all loopback SSH coverage state
+        if: always()
+        run: bash .github/scripts/setup-loopback-ssh.sh stop
+      - name: Retain only sanitized coverage and manifest failure summaries
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: executable-coverage-summary
+          path: |
+            ${{ runner.temp }}/coverage/summary.json
+            ${{ runner.temp }}/coverage/results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  aggregate:
+    name: required / aggregate
+    if: always()
+    needs: [static, fixture-installer, unit, race, native-pty, tmux, bash32-negative, blesh, loopback-ssh, artifact-build, artifact-inspection, artifact-native, coverage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every deterministic qualification family
+        env:
+          RESULTS: ${{ join(needs.*.result, ',') }}
+        run: |
+          if [[ ,$RESULTS, == *,failure,* || ,$RESULTS, == *,cancelled,* || ,$RESULTS, == *,skipped,* ]]; then
+            printf 'required qualification did not complete successfully: %s\n' "$RESULTS" >&2
+            exit 1
+          fi

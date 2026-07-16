@@ -91,6 +91,46 @@ __intent_sh_capture_interrupt() {
     __intent_sh_interrupted=1
 }
 
+# The native trap and the terminal-byte monitor can race. An atomic directory
+# claim makes exactly one of them responsible for forwarding cancellation to
+# the adapter process; the adapter then tears down its provider process group.
+__intent_sh_forward_interrupt() {
+    __intent_sh_interrupted=1
+    [[ -n ${__intent_sh_cancel_path-} && -n ${__intent_sh_provider_pid-} ]] || return 0
+    if command mkdir -- "${__intent_sh_cancel_path}.lock" 2>/dev/null; then
+        printf 'cancelled:%s\n' "${1:-signal}" > "$__intent_sh_cancel_path"
+        builtin kill -CONT "$__intent_sh_provider_pid" 2>/dev/null || :
+        builtin kill -INT "$__intent_sh_provider_pid" 2>/dev/null || :
+    fi
+}
+
+__intent_sh_restore_hup_trap() {
+    if [[ -n ${__intent_sh_previous_hup_trap-} ]]; then
+        builtin eval "builtin $__intent_sh_previous_hup_trap"
+    else
+        builtin trap - HUP
+    fi
+}
+
+__intent_sh_handle_hangup() {
+    __intent_sh_forward_interrupt hangup
+    if [[ -n ${__intent_sh_tty_monitor_pid-} ]]; then
+        builtin kill -TERM "$__intent_sh_tty_monitor_pid" 2>/dev/null || :
+    fi
+    if [[ -n ${__intent_sh_tty_state-} ]]; then
+        command stty "$__intent_sh_tty_state" < /dev/tty 2>/dev/null || :
+    fi
+    if [[ -n ${tmp-} ]]; then
+        command rm -f -- "$tmp"
+    fi
+    if [[ -n ${__intent_sh_cancel_path-} ]]; then
+        command rm -f -- "$__intent_sh_cancel_path"
+        command rmdir -- "${__intent_sh_cancel_path}.lock" 2>/dev/null || :
+    fi
+    __intent_sh_restore_hup_trap
+    builtin kill -HUP "$$"
+}
+
 __intent_sh_runtime_failure_message() {
     case ${INTENT_SH_ADAPTER_FAILURE-} in
         detached)
@@ -243,7 +283,7 @@ __intent_sh_rewrite() {
     fi
     __intent_sh_protocol_cursor_from_editor "$current" "$current_cursor"
     local current_protocol_cursor=$__intent_sh_protocol_cursor
-    local request_original= request_previous=
+    local request_original='' request_previous=''
     local request_generation=0 pending_original=$current
     local pending_original_cursor=$current_cursor
 
@@ -286,6 +326,7 @@ __intent_sh_rewrite() {
     local __intent_sh_provider_pid=
     local __intent_sh_signal_mode=trap
     local __intent_sh_previous_int_trap=
+    local __intent_sh_previous_hup_trap=
     local __intent_sh_tty_state=
     local __intent_sh_cancel_path=
     local __intent_sh_tty_monitor_pid=
@@ -300,17 +341,19 @@ __intent_sh_rewrite() {
         command stty -isig < /dev/tty 2>/dev/null
     fi
     local command_status=0
+    __intent_sh_previous_hup_trap=$(builtin trap -p HUP)
+    builtin trap '__intent_sh_handle_hangup' HUP
     # Keep asynchronous signal handling deliberately minimal. ble.sh owns the
     # real INT trap while its editor is attached, so use its supported hook
     # registry instead of replacing that trap from inside an edit widget.
     # Native Readline has no such dispatcher and uses a scoped Bash trap.
     if [[ $__intent_sh_editor_backend == blesh ]]; then
         __intent_sh_signal_mode=blesh
-        blehook 'INT-=__intent_sh_capture_interrupt' >/dev/null 2>&1 || :
-        blehook 'INT!=__intent_sh_capture_interrupt'
+        blehook 'INT-=__intent_sh_forward_interrupt' >/dev/null 2>&1 || :
+        blehook 'INT!=__intent_sh_forward_interrupt'
     else
         __intent_sh_previous_int_trap=$(builtin trap -p INT)
-        builtin trap '__intent_sh_interrupted=1' INT
+        builtin trap '__intent_sh_forward_interrupt process-signal' INT
     fi
     { printf '%s\0' \
             "$__intent_sh_protocol_version" \
@@ -344,9 +387,7 @@ __intent_sh_rewrite() {
                 if IFS= builtin read -r -s -n 1 -t 1 __intent_sh_key < /dev/tty &&
                     [[ $__intent_sh_key == $'\003' ]]
                 then
-                    printf 'cancelled\n' > "$__intent_sh_cancel_path"
-                    builtin kill -CONT "$__intent_sh_provider_pid" 2>/dev/null
-                    builtin kill -INT "$__intent_sh_provider_pid" 2>/dev/null
+                    __intent_sh_forward_interrupt terminal-byte
                     break
                 fi
             done
@@ -357,16 +398,20 @@ __intent_sh_rewrite() {
         fi
     fi
     __intent_sh_message "generating... (Ctrl+C to cancel)"
+    local __intent_sh_wait_status=0
     while true; do
-        wait "$__intent_sh_provider_pid" || command_status=$?
+        __intent_sh_wait_status=0
+        wait "$__intent_sh_provider_pid" || __intent_sh_wait_status=$?
+        command_status=$__intent_sh_wait_status
         if ! kill -0 "$__intent_sh_provider_pid" 2>/dev/null; then
             break
         fi
-        if ((!__intent_sh_interrupted)); then
-            break
+        # A trapped signal can interrupt wait before the child changes state.
+        # Forwarding is idempotent through the cancellation lock, then wait
+        # again until the adapter and its provider descendants are reaped.
+        if ((__intent_sh_interrupted)); then
+            __intent_sh_forward_interrupt process-signal
         fi
-        kill -CONT "$__intent_sh_provider_pid" 2>/dev/null
-        kill -INT "$__intent_sh_provider_pid" 2>/dev/null
     done
     if [[ -n $__intent_sh_tty_monitor_pid ]]; then
         builtin kill -TERM "$__intent_sh_tty_monitor_pid" 2>/dev/null
@@ -378,9 +423,10 @@ __intent_sh_rewrite() {
     if [[ -n $__intent_sh_cancel_path ]]; then
         [[ -s $__intent_sh_cancel_path ]] && __intent_sh_interrupted=1
         command rm -f -- "$__intent_sh_cancel_path"
+        command rmdir -- "${__intent_sh_cancel_path}.lock" 2>/dev/null || :
     fi
     if [[ $__intent_sh_signal_mode == blesh ]]; then
-        blehook 'INT-=__intent_sh_capture_interrupt' >/dev/null 2>&1 || :
+        blehook 'INT-=__intent_sh_forward_interrupt' >/dev/null 2>&1 || :
     else
         # Ignore a second INT during the small reporting window, then put back
         # the caller's exact trap below.
@@ -396,6 +442,7 @@ __intent_sh_rewrite() {
             builtin trap - INT
         fi
     fi
+    __intent_sh_restore_hup_trap
     if ((__intent_sh_interrupted)); then
         command rm -f -- "$tmp"
         __intent_sh_active_request_id=

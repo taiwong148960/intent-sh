@@ -12,10 +12,15 @@ The tested compatibility tuple is:
 
 Bash 3.0 and 3.1 are not advertised. Upstream ble.sh supports Bash 3.0+, but this project cannot keep reproducible PTY safety coverage for those obsolete releases. Bash 3.x without the exact tested ble.sh release fails closed.
 
-The pinned upstream commit is [`d69e4d549a1881a37300fe6b4a05478bd9157dfc`](https://github.com/akinomyoga/ble.sh/commit/d69e4d549a1881a37300fe6b4a05478bd9157dfc). The compatibility harness verifies and builds GitHub's official source archive for that commit. The older stable release `0.4.0-devel3` was rejected by the stock macOS Bash 3.2 probe because its input loop stopped responding after attachment on the current macOS runner.
+The pinned upstream root commit is [`d69e4d549a1881a37300fe6b4a05478bd9157dfc`](https://github.com/akinomyoga/ble.sh/commit/d69e4d549a1881a37300fe6b4a05478bd9157dfc). Its `contrib` gitlink resolves to blesh-contrib commit [`0383f1b3e6a9e7332d38cac28f04d204d195affb`](https://github.com/akinomyoga/blesh-contrib/commit/0383f1b3e6a9e7332d38cac28f04d204d195affb). GitHub root archives omit git-submodule contents, so the compatibility harness downloads and verifies the two archives independently, extracts the pinned contrib archive into the root tree, and only then builds the fixture. Both inputs are BSD-3-Clause licensed. The older stable release `0.4.0-devel3` was rejected by the stock macOS Bash 3.2 probe because its input loop stopped responding after attachment on the current macOS runner.
 
 ```text
-Source archive SHA-256 db583d869ec5afef0e6bd23bd1af38ec3aa2cc3e6062f8aa499633522b005394
+ble.sh root archive URL     https://github.com/akinomyoga/ble.sh/archive/d69e4d549a1881a37300fe6b4a05478bd9157dfc.tar.gz
+ble.sh root archive SHA-256 db583d869ec5afef0e6bd23bd1af38ec3aa2cc3e6062f8aa499633522b005394
+contrib archive URL         https://github.com/akinomyoga/blesh-contrib/archive/0383f1b3e6a9e7332d38cac28f04d204d195affb.tar.gz
+contrib archive SHA-256     537100e1deb783a645e479eed6c8c78f9537e2c1aa7c2ff07fa7a23365f98c2f
+expected BLE_VERSION        0.4.0-nightly+d69e4d5
+fixture installer revision  3
 ```
 
 ## Required editor contract
@@ -63,4 +68,10 @@ bash .github/scripts/install-blesh-test.sh
 INTENT_SH_TEST_BLESH=/path/to/pinned/out/ble.sh go test ./internal/shelltest -run Blesh -count=1 -v
 ```
 
-Set `INTENT_SH_TEST_BLESH_ARCHIVE` to an already downloaded official commit archive to run offline. The installer verifies the pinned checksum before building it with GNU awk. Ordinary `go test ./...` skips the external ble.sh matrix when `INTENT_SH_TEST_BLESH` is unset.
+Set `INTENT_SH_TEST_BLESH_ROOT_ARCHIVE` and `INTENT_SH_TEST_BLESH_CONTRIB_ARCHIVE` to the two already downloaded official commit archives to run offline. (`INTENT_SH_TEST_BLESH_ARCHIVE` remains a root-archive compatibility alias.) The installer verifies both pinned checksums before extraction, builds outside the cache destination with GNU awk, and atomically publishes the complete generated runtime tree plus a cache manifest. Every cache restoration rechecks the root and contrib revisions and checksums, installer revision, expected version, license identifiers, entrypoint digest, runtime file count, runtime-tree digest, critical runtime files, and regular-file boundaries; stale, partial, symlinked, or corrupted entries rebuild or fail closed. Ordinary `go test ./...` skips the external ble.sh matrix when `INTENT_SH_TEST_BLESH` is unset.
+
+The network-free installer regression suite covers empty, restored, corrupted, stale, symlinked, incomplete, failed-build, wrong-version, and atomic-publication paths with both `sha256sum` and macOS `shasum` command modes:
+
+```bash
+bash .github/scripts/test-install-blesh-test.sh
+```

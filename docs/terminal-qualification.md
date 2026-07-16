@@ -19,20 +19,25 @@ The runtime must not branch on the terminal name, `TERM`, tmux, or SSH client. T
 From the repository root, run:
 
 ```sh
-make fmt-check
-make vet
-make shell-check
-go test ./... -count=1
-make tmux-test                 # when tmux is installed
+make static-check
+make test-unit QUALIFICATION_DIR=/absolute/disposable/results
+make native-pty-test QUALIFICATION_DIR=/absolute/disposable/results
+make tmux-test QUALIFICATION_DIR=/absolute/disposable/results
 ```
 
-The tmux suite creates a private explicit socket in a mode-0700 temporary directory with an empty config, kills only that server, and never calls `capture-pane`. Ordinary tests skip the opt-in SSH smoke without contacting a host. On a prepared target with existing BatchMode authentication and a known host key:
+Required hosted PTY evidence covers Bash and Zsh, Emacs and Vi modes, default/custom chords, CR/LF, supported `TERM` values, `C` and UTF-8 locales, mixed English/Chinese and combining text, cursor positions, resize, provider failures, cancellation delivery modes, terminal closure/HUP, exact buffer restoration, regeneration, undo, safety acceptance, setup, downgrade, and removal. The tmux suite adds detach/reattach and pane/session isolation using a private explicit socket, mode-0700 directory, empty config, and no `capture-pane`.
+
+Required Linux CI also creates a job-owned loopback sshd with disposable account/home, high localhost port, temporary host/client keys, strict known hosts, disabled password/forwarding/user configuration, and always-run cleanup. That deterministic fixture runs the remote Bash/Zsh lifecycle, direct disconnect teardown, and SSH-to-tmux reconnect journey. It is not evidence for a caller-owned network or authentication path.
+
+On a prepared external target with existing BatchMode authentication and a known host key:
 
 ```sh
-INTENT_SH_TEST_SSH_TARGET=user@prepared-host make ssh-test
+INTENT_SH_TEST_SSH_TARGET=user@prepared-host make external-ssh-test
 ```
 
-The SSH harness installs nothing and creates no key, known-host entry, provider login, or daemon. It cross-builds an ephemeral candidate and fake providers locally, stages them under a mode-0700 remote temporary directory, clears the remote test environment, exercises the allocated SSH PTY, and removes the directory. A lost connection may prevent automatic cleanup; the failure reports the bounded test phase, and the maintainer should remove only a leftover directory named `intent-sh-ssh.*` under the remote temporary directory after verifying ownership.
+The external SSH harness installs nothing and creates no key, known-host entry, provider login, or daemon. It cross-builds an ephemeral candidate and fake providers locally, stages them under a mode-0700 remote temporary directory, clears the remote test environment, exercises the allocated SSH PTY, and removes the directory. A lost connection may prevent automatic cleanup; the failure reports the bounded test phase, and the maintainer should remove only a leftover directory named `intent-sh-ssh.*` under the remote temporary directory after verifying ownership. The protected manual workflow validates the target as one bounded host or `user@host` token, accepts no identity/port/option string, and uploads no SSH artifact.
+
+Automated pseudo-terminal success proves adapter behavior after bytes reach a PTY. It does not identify Terminal.app, iTerm2, Warp, VS Code, xterm, an SSH client, or any other terminal application, and it never refreshes the dated named-environment records below. Complete the named journey in the actual application when terminal delivery itself is the qualification claim.
 
 ## Named terminal journey
 

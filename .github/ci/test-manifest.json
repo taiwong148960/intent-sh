@@ -1,0 +1,221 @@
+{
+  "version": 1,
+  "suites": {
+    "unit": {
+      "tier": "required",
+      "description": "Every top-level Test or Fuzz seed in these packages is a required unit test.",
+      "prerequisites": ["go"],
+      "matrix": ["ubuntu", "macos"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/app", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/apperr", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/artifactqual", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/citest", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/cli", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/config", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/context", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/coveragequal", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/doctor", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/keychord", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/keyprobe", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/prompt", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/protocol", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/provider", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/safety", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/setup", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/textsafe", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/schemas", "name": "*"},
+        {"package": "github.com/taiwong148960/intent-sh/shell", "name": "*"}
+      ]
+    },
+    "shelltest-harness": {
+      "tier": "required",
+      "description": "Repository-owned tmux and SSH harness safety tests that do not open an integration session.",
+      "prerequisites": ["go"],
+      "matrix": ["ubuntu", "macos"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestQualificationStrictFlagIsExplicit"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxHarnessUsesPrivateSocketEnvironmentAndCleanInnerShell"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHHarnessRejectsUnsafeCleanupPathsAndDisablesForwarding"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHSmokeHarnessSkipsWithoutExplicitTarget"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHMarkerValuesRemainOutsideLocalProviderBoundaries"}
+      ]
+    },
+    "native-pty": {
+      "tier": "required",
+      "description": "Native Bash and Zsh PTY lifecycle, safety, setup, terminal, and editor conformance.",
+      "prerequisites": ["go", "bash>=4", "zsh", "pty"],
+      "matrix": ["ubuntu", "macos"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestDangerousConfirmationInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestOrdinaryCommandUsesOneEnter"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestEditingDisarmsDangerousFingerprint"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestNativeTerminalConformanceLifecycleMatrix"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTERMResizeAndUnicodeFailureConformance"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBindingMismatchAndConcurrentSessionsKeepBufferStateLocal"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestNativeSetupCustomProbeResetDowngradeAndRemovalJourney"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestMVPRewriteWorkflowInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBashCancellationAndTeardownQualification"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestNativeProviderFailureMatrixInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestNativeEditorsUnicodeCursorRoundTripInPTY"}
+      ]
+    },
+    "bash32-negative": {
+      "tier": "required",
+      "description": "macOS system Bash 3.2 must remain inert without ble.sh and fail before binding.",
+      "prerequisites": ["go", "bash=3.2", "pty"],
+      "matrix": ["macos"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBash32WithoutBleshFailsBeforeBinding"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBash32MissingBleshIsInertInPTY"}
+      ]
+    },
+    "tmux": {
+      "tier": "required",
+      "description": "Private-socket tmux lifecycle, detach/reattach, isolation, and intercepted-binding conformance.",
+      "prerequisites": ["go", "bash>=4", "zsh", "tmux", "pty"],
+      "matrix": ["ubuntu", "macos"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxHarnessUsesPrivateSocketEnvironmentAndCleanInnerShell"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxLifecycleMatrix"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxDetachReattachAndSessionStateIsolation"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTmuxInterceptedRootBindingFailsKeyDeliveryDiagnostic"}
+      ]
+    },
+    "blesh-bash32": {
+      "tier": "required",
+      "description": "Pinned Bash 3.2 plus pinned ble.sh contract and full PTY lifecycle qualification.",
+      "prerequisites": ["go", "bash=3.2", "ble.sh", "pty"],
+      "matrix": ["ubuntu", "macos"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshEditCommandContract"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAdapterInitialization"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshOrdinaryAcceptanceContract"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAcceptAdviceDelegationContract"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAcceptAdviceRuntimeDelegationContract"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshInitializationRefusesConflictsWithoutPartialBindings"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshInitializationFailuresLeaveNoPartialIntegration"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBash32MissingBleshIsInertInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPRewriteLifecycleInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshStaleResponseInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAdapterPreservesOrdinaryAcceptanceInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshClaudeEndToEndNoAutoExecutionInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshSourceSetupDoctorAndRemovalJourneyInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPSafetyAndFailureParityInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPTimeoutAndCancellationInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshDetachRequiresExplicitReinitializationInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshUnicodeCursorRoundTripInPTY"}
+      ]
+    },
+    "blesh-modern": {
+      "tier": "required",
+      "description": "Current Bash plus pinned ble.sh compatibility and acceptance qualification.",
+      "prerequisites": ["go", "bash>=4", "ble.sh", "pty"],
+      "matrix": ["ubuntu", "macos"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshEditCommandContract"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAdapterInitialization"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshOrdinaryAcceptanceContract"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAcceptAdviceDelegationContract"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAcceptAdviceRuntimeDelegationContract"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshInitializationRefusesConflictsWithoutPartialBindings"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestModernBashNativeAndBleshAcceptanceContract"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPRewriteLifecycleInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshStaleResponseInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshAdapterPreservesOrdinaryAcceptanceInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshClaudeEndToEndNoAutoExecutionInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshSourceSetupDoctorAndRemovalJourneyInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPSafetyAndFailureParityInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshMVPTimeoutAndCancellationInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshDetachRequiresExplicitReinitializationInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBleshUnicodeCursorRoundTripInPTY"}
+      ]
+    },
+    "ssh-loopback": {
+      "tier": "required",
+      "description": "Ephemeral loopback OpenSSH Bash and Zsh remote lifecycle conformance.",
+      "prerequisites": ["go", "openssh-client", "openssh-server", "bash>=4", "zsh", "pty"],
+      "matrix": ["ubuntu"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHRemoteBashAndZshConformance"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHDirectDisconnectReapsRemoteProvider"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHToTmuxReconnectStateAndPaneIsolation"}
+      ]
+    },
+    "ssh-opt-in-guard": {
+      "tier": "required",
+      "description": "Ordinary test runs prove that SSH conformance remains explicitly opt-in.",
+      "prerequisites": ["go"],
+      "matrix": ["ubuntu", "macos"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHSmokeHarnessSkipsWithoutExplicitTarget"}
+      ]
+    },
+    "external-ssh": {
+      "tier": "protected-manual",
+      "description": "Explicit protected-runner SSH and SSH-to-tmux qualification against a caller-owned target.",
+      "prerequisites": ["go", "approved-environment", "openssh-client", "preauthenticated-target", "known-host", "bash>=4", "zsh", "tmux", "pty"],
+      "matrix": ["workflow-dispatch"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHRemoteBashAndZshConformance"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHDirectDisconnectReapsRemoteProvider"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestSSHToTmuxReconnectStateAndPaneIsolation"}
+      ]
+    },
+    "artifact-native-pty": {
+      "tier": "required",
+      "description": "The same native PTY contract executed against the separately built release-path executable.",
+      "prerequisites": ["go", "prebuilt-intent-sh", "bash>=4", "zsh", "pty"],
+      "matrix": ["ubuntu", "macos"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestDangerousConfirmationInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestOrdinaryCommandUsesOneEnter"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestEditingDisarmsDangerousFingerprint"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestNativeTerminalConformanceLifecycleMatrix"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestTERMResizeAndUnicodeFailureConformance"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBindingMismatchAndConcurrentSessionsKeepBufferStateLocal"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestNativeSetupCustomProbeResetDowngradeAndRemovalJourney"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestMVPRewriteWorkflowInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestBashCancellationAndTeardownQualification"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestNativeProviderFailureMatrixInPTY"},
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestNativeEditorsUnicodeCursorRoundTripInPTY"}
+      ]
+    },
+    "fuzz-keychord": {
+      "tier": "scheduled",
+      "description": "Bounded key-chord parser fuzzing.",
+      "prerequisites": ["go"],
+      "matrix": ["ubuntu"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/keychord", "name": "FuzzParse"}
+      ]
+    },
+    "shell-compatibility": {
+      "tier": "scheduled",
+      "description": "Pinned minimum/current Bash and selected Zsh source builds run the native PTY lifecycle.",
+      "prerequisites": ["go", "pinned-shell-source", "pty"],
+      "matrix": ["bash-4.0", "bash-5.3", "zsh-5.8.1", "zsh-5.9.1"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/shelltest", "name": "TestPinnedShellCompatibilityLifecycle"}
+      ]
+    },
+    "fuzz-safety": {
+      "tier": "scheduled",
+      "description": "Bounded recursive-deletion classifier fuzzing.",
+      "prerequisites": ["go"],
+      "matrix": ["ubuntu"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/safety", "name": "FuzzRecursiveDeletionCannotHideBehindWrappers"}
+      ]
+    },
+    "real-provider": {
+      "tier": "protected-manual",
+      "description": "Explicit environment-approved real-provider smoke test with no secret-bearing artifacts.",
+      "prerequisites": ["go", "approved-environment", "provider-credential"],
+      "matrix": ["workflow-dispatch"],
+      "expected": [
+        {"package": "github.com/taiwong148960/intent-sh/internal/smoketest", "name": "TestRealProviderSmoke"}
+      ]
+    }
+  }
+}

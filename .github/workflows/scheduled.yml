@@ -1,0 +1,348 @@
+name: Scheduled Qualification
+
+on:
+  schedule:
+    - cron: "17 3 * * 2"
+  workflow_dispatch:
+    inputs:
+      repeat_count:
+        description: Bounded PTY and tmux repetition count
+        type: choice
+        options: ["2", "3", "5"]
+        default: "3"
+      fuzz_budget:
+        description: Independent budget for each registered fuzz target
+        type: choice
+        options: ["20s", "30s", "60s"]
+        default: "30s"
+      shuffle_seed:
+        description: Optional positive Go test shuffle seed
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-qualification-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
+  GOFLAGS: -mod=readonly
+  OPENSPEC_TELEMETRY: "0"
+
+jobs:
+  stress:
+    name: scheduled / PTY and tmux stress / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install current shells and tmux
+        run: |
+          if [[ $RUNNER_OS == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes ncurses-term tmux zsh
+            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          else
+            brew install bash tmux
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
+          fi
+          echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
+      - name: Record bounded stress metadata
+        run: bash .github/scripts/print-ci-metadata.sh
+      - name: Run shuffled native and private-socket tmux repetitions
+        env:
+          STRESS_COUNT: ${{ inputs.repeat_count || '3' }}
+          SHUFFLE_SEED: ${{ inputs.shuffle_seed || github.run_id }}
+        run: |
+          [[ $STRESS_COUNT =~ ^(2|3|5)$ ]]
+          [[ $SHUFFLE_SEED =~ ^[1-9][0-9]{0,18}$ ]]
+          make scheduled-stress \
+            AUDIT_EXTRA_MATRIX="-matrix seed=$SHUFFLE_SEED" \
+            QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Retain exact sanitized seed and failure phase
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scheduled-stress-${{ runner.os }}-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
+
+  fuzz:
+    name: scheduled / independent fuzz budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate the bounded fuzz budget
+        env:
+          FUZZ_BUDGET: ${{ inputs.fuzz_budget || '30s' }}
+        run: |
+          [[ $FUZZ_BUDGET =~ ^(20s|30s|60s)$ ]]
+          mkdir -p "$RUNNER_TEMP/fuzz-summary"
+          printf 'budget=%s\nregistered_targets=2\ncorpus_policy=minimized-generated-inputs-only\n' "$FUZZ_BUDGET" > "$RUNNER_TEMP/fuzz-summary/metadata"
+          touch "$RUNNER_TEMP/fuzz-started"
+      - name: Fuzz key-chord parsing independently
+        env:
+          FUZZ_BUDGET: ${{ inputs.fuzz_budget || '30s' }}
+        run: go test ./internal/keychord -run '^$' -fuzz '^FuzzParse$' -fuzztime="$FUZZ_BUDGET"
+      - name: Fuzz recursive-deletion classification independently
+        env:
+          FUZZ_BUDGET: ${{ inputs.fuzz_budget || '30s' }}
+        run: go test ./internal/safety -run '^$' -fuzz '^FuzzRecursiveDeletionCannotHideBehindWrappers$' -fuzztime="$FUZZ_BUDGET"
+      - name: Verify bounded minimized corpus metadata without copying inputs
+        if: failure()
+        run: |
+          while IFS= read -r -d '' corpus; do
+            case "$corpus" in
+              */internal/keychord/testdata/fuzz/FuzzParse/*|*/internal/safety/testdata/fuzz/FuzzRecursiveDeletionCannotHideBehindWrappers/*) ;;
+              *) printf 'unexpected fuzz corpus path\n' >&2; exit 1 ;;
+            esac
+            size=$(wc -c < "$corpus" | tr -d ' ')
+            (( size > 0 && size <= 65536 ))
+            IFS= read -r header < "$corpus"
+            [[ $header == 'go test fuzz v1' ]]
+            digest=$(sha256sum "$corpus" | awk '{print $1}')
+            target=${corpus#*/testdata/fuzz/}
+            target=${target%%/*}
+            printf 'target=%s bytes=%s sha256=%s minimized_by=go-fuzz-engine\n' "$target" "$size" "$digest" >> "$RUNNER_TEMP/fuzz-summary/failing-corpus-metadata"
+          done < <(find "$GITHUB_WORKSPACE/internal" -path '*/testdata/fuzz/*' -type f -newer "$RUNNER_TEMP/fuzz-started" -print0)
+      - name: Retain only privacy-safe fuzz policy and digest metadata
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-policy-summary
+          path: ${{ runner.temp }}/fuzz-summary
+          if-no-files-found: error
+          retention-days: 7
+
+  shell-compatibility:
+    name: scheduled / shell compatibility / ${{ matrix.fixture }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: [bash-4.0, bash-5.3, zsh-5.8.1, zsh-5.9.1]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install source-build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential curl libncurses-dev
+      - name: Restore only this pinned source-build cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ runner.temp }}/intent-sh-shell-${{ matrix.fixture }}
+          key: shell-${{ matrix.fixture }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/ci/shell-compat-fixtures.env', '.github/scripts/install-shell-compat.sh') }}
+      - name: Build or verify the pinned shell fixture
+        env:
+          INTENT_SH_SHELL_FIXTURE: ${{ matrix.fixture }}
+          INTENT_SH_SHELL_COMPAT_CACHE: ${{ runner.temp }}/intent-sh-shell-${{ matrix.fixture }}
+        run: bash .github/scripts/install-shell-compat.sh
+      - name: Run Emacs/Vi and default/custom lifecycle qualification
+        run: make shell-compatibility-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Retain pinned fixture and failure phase metadata
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: shell-${{ matrix.fixture }}-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
+
+  linux-distributions:
+    name: scheduled / glibc distribution / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install PTY shell prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ncurses-term zsh
+          echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+      - name: Record distribution and libc identity
+        run: |
+          . /etc/os-release
+          printf 'distribution=%s\nversion=%s\narchitecture=%s\nlibc=' "$ID" "$VERSION_ID" "$(uname -m)"
+          ldd --version 2>&1 | sed -n '1p'
+          bash .github/scripts/print-ci-metadata.sh
+      - name: Run strict native PTY qualification
+        run: make native-pty-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Retain sanitized distribution failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distribution-${{ matrix.os }}-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
+
+  native-arm64:
+    name: scheduled / native Linux arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install arm64 terminal prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ncurses-term tmux zsh
+          echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
+      - name: Record native arm64 host and terminal metadata
+        run: bash .github/scripts/print-ci-metadata.sh
+      - name: Prove native architecture and run PTY/tmux manifests
+        run: |
+          test "$(go env GOARCH)" = arm64
+          make native-pty-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+          make tmux-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
+      - name: Retain sanitized native arm64 failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-linux-arm64-summary
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: ignore
+          retention-days: 7
+
+  provider-capabilities:
+    name: scheduled / unauthenticated provider capabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set up exact Node for locked provider tooling
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 20.19.0
+          cache: npm
+          cache-dependency-path: .github/provider-tools/package-lock.json
+      - name: Install exact official CLI packages from their integrity lock
+        run: npm ci --prefix .github/provider-tools --ignore-scripts --no-audit --no-fund
+      - name: Compile the no-generation capability probe
+        run: go build -trimpath -o "$RUNNER_TEMP/provider-capability-probe" ./.github/scripts/provider-capability-probe
+      - name: Verify flags and expected login-not-ready handling in an empty home
+        run: |
+          probe_home="$RUNNER_TEMP/provider-probe-home"
+          mkdir -m 700 "$probe_home"
+          codex="$GITHUB_WORKSPACE/.github/provider-tools/node_modules/@openai/codex/bin/codex.js"
+          claude="$GITHUB_WORKSPACE/.github/provider-tools/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
+          env -i HOME="$probe_home" PATH="$PATH" LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+            "$RUNNER_TEMP/provider-capability-probe" -codex "$codex" -claude "$claude" -home "$probe_home" \
+            | tee "$RUNNER_TEMP/provider-capability-summary.json"
+      - name: Retain only provider name, version, stage, and pass/fail
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: provider-capability-summary
+          path: ${{ runner.temp }}/provider-capability-summary.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  security:
+    name: scheduled / module integrity and Go vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify module content before the network-backed scan
+        run: go mod verify
+      - name: Install the exact govulncheck release
+        env:
+          GOBIN: ${{ runner.temp }}/security-tools
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+      - name: Record scanner and database revision and fail on reachable findings
+        run: |
+          go version -m "$RUNNER_TEMP/security-tools/govulncheck" | sed -n '1,8p'
+          "$RUNNER_TEMP/security-tools/govulncheck" -json ./... \
+            | go run ./.github/scripts/govuln-summary \
+            | tee "$RUNNER_TEMP/govuln-summary.json"
+      - name: Retain only bounded scanner, database, and identifier metadata
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: govuln-summary
+          path: ${{ runner.temp }}/govuln-summary.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  capacity-boundary:
+    name: scheduled / explicit capacity boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record unavailable dimensions without claiming qualification
+        run: |
+          printf '%s\n' \
+            'musl_pty=UNAVAILABLE:no supported hosted musl PTY runner is configured' \
+            'linux_arm64=SELECTED:ubuntu-24.04-arm job must complete independently' \
+            'emulated_foreign_pty=NOT_QUALIFIED:cross artifacts receive inspection only'

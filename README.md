@@ -264,38 +264,37 @@ To roll back, first remove `rewrite_key` and `undo_key` from the strict TOML fil
 
 ## Development
 
-Run the reproducible checks with:
+Run the convenient local checks with:
 
 ```sh
 make check
 ```
 
-On macOS, point `INTENT_SH_TEST_BASH` at a separately installed Bash 4.0+ to run the modern native-Readline PTY matrix. The external ble.sh matrix is opt-in and never downloads during ordinary tests:
+The merge gate is substantially broader. Required GitHub CI has stable read-only jobs for static integrity, unit and race tests, native Bash/Zsh PTYs, private-socket tmux, stock Bash 3.2 fail-closed behavior, complete ble.sh qualification, ephemeral loopback SSH and SSH-to-tmux, reproducible/cross/native artifacts, executable coverage, and the final `required / aggregate` status. Pull-request matrices fail on a missing prerequisite or unexpected skip; ordinary `make check` remains local-friendly.
+
+The pinned ble.sh fixture is not a shallow checkout. The installer downloads the exact root and `contrib` source archives independently, verifies both checked-in SHA-256 digests, assembles the required gitlink content in a fresh tree, builds the expected version, records source commits/digests/licenses plus the entrypoint and complete runtime-tree digests, and atomically publishes only a fully validated cache. Network-free adversarial tests cover empty, restored, corrupt, incomplete, symlink, and interrupted publication paths on GNU and macOS tool variants. See [the compatibility contract](docs/blesh-compatibility.md).
+
+For an explicit local ble.sh run:
 
 ```sh
-bash .github/scripts/install-blesh-test.sh
-INTENT_SH_TEST_BLESH=/path/to/pinned/out/ble.sh \
-INTENT_SH_TEST_BASH32=/bin/bash \
-go test ./internal/shelltest -run Blesh -count=1 -v
+export INTENT_SH_TEST_BLESH="$(bash .github/scripts/install-blesh-test.sh)"
+make blesh-test BLESH_SUITE=blesh-modern QUALIFICATION_DIR=/absolute/disposable/results
 ```
 
-CI verifies the pinned archive checksum and caches the built test artifact. The suite covers stock macOS Bash 3.2, modern Bash with both native Readline and ble.sh, and fail-closed Bash 3.2 behavior when the dependency is missing or incompatible.
+The required loopback SSH job owns a temporary localhost daemon, high port, account/home, host/client keys, strict known-host file, and client config; forwarding, passwords, agent/X11, tunnels, user environment, and user rc files are disabled, and an always-run step removes the whole job-owned namespace. A caller-owned external target is never used by pull-request CI. It is available only through protected manual dispatch or the local `external-ssh-test`, requires pre-existing BatchMode authentication and known-host state, creates no credential, and restricts cleanup to its validated remote `intent-sh-ssh.*` directory.
 
-The isolated tmux suite requires tmux locally and never uses the default server:
+Weekly and manual scheduled qualification adds shuffled/repeated PTY and tmux runs, independent fuzz budgets, checksum-pinned Bash 4.0/5.3 and Zsh 5.8.1/5.9.1 source builds, Ubuntu glibc versions, native Linux arm64, unauthenticated pinned Claude/Codex capability checks without generation, and recorded vulnerability-database checks. Authenticated provider smoke and named GUI/integrated terminal qualification remain protected manual evidence; hosted PTY success never updates a dated named-terminal record.
+
+Common strict targets include:
 
 ```sh
+make static-check
+make native-pty-test QUALIFICATION_DIR=/absolute/disposable/results
 make tmux-test
+INTENT_SH_TEST_SSH_TARGET=user@known-host make external-ssh-test
 ```
 
-The SSH smoke suite is deliberately opt-in. The target must already be reachable with non-interactive SSH authentication and a known host key; the harness creates no credential or package installation. It stages and removes only a private temporary test bundle:
-
-```sh
-INTENT_SH_TEST_SSH_TARGET=user@prepared-host make ssh-test
-```
-
-See [the terminal qualification guide](docs/terminal-qualification.md) for prerequisites, the remote tmux reattach journey, and the bounded evidence template.
-
-Real provider checks are deliberately opt-in; see the [provider compatibility record](docs/provider-compatibility.md).
+The complete target/prerequisite/skip/timeout/trust-tier matrix, exact reproduction commands, cleanup ownership, and branch-protection update procedure are in [the development guide](docs/development.md). Terminal and provider manual boundaries remain in the [terminal qualification guide](docs/terminal-qualification.md) and [provider compatibility record](docs/provider-compatibility.md).
 
 ## License
 
