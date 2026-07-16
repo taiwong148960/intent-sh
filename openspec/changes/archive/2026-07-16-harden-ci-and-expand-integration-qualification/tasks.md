@@ -14,7 +14,7 @@
 - [x] 2.3 Add a fixture manifest and cache verifier that checks regular-file type, root and submodule revisions, checksums, installer revision, expected version, and built-script digest before exporting `INTENT_SH_TEST_BLESH`.
 - [x] 2.4 Make partial extraction, missing submodule content, failed build, stale manifest, symlink, wrong digest, and unsupported version fail or rebuild without accepting a poisoned cache.
 - [x] 2.5 Add network-free installer tests using local archive overrides for empty-cache, valid-cache, corrupted-cache, incomplete-source, and atomic-publication behavior on both GNU and macOS command variants.
-- [ ] 2.6 Run the repaired empty-cache and restored-cache build paths on hosted macOS and Linux and verify that every selected ble.sh case executes rather than skips.
+- [x] 2.6 Run the repaired empty-cache and restored-cache build paths on hosted macOS and Linux and verify that every selected ble.sh case executes rather than skips.
 
 ## 3. Linux Bash Cancellation and Process Teardown
 
@@ -22,8 +22,8 @@
 - [x] 3.2 Add Linux-focused PTY assertions that distinguish terminal-byte `Ctrl+C`, direct process `SIGINT`, timeout, PTY closure, and ordinary shell exit while checking TTY attributes and trap restoration after each path.
 - [x] 3.3 Rework the Bash provider/monitor foreground-process-group, signal forwarding, wait, and reap sequence so cancellation is forwarded exactly once and no monitor or provider descendant survives.
 - [x] 3.4 Preserve the pre-request buffer and cursor, suppress fallback, restore the caller's signal trap and terminal mode, and prove a new rewrite can run in the same shell after cancellation.
-- [ ] 3.5 Run the terminal-byte and direct-signal cancellation cases repeatedly on Linux without retries and retain the exact failing phase if any repetition fails.
-- [ ] 3.6 Re-run native macOS Bash, Zsh, tmux, SSH, and Bash 3.2 ble.sh cancellation matrices to prove the Linux fix does not regress another editor backend.
+- [x] 3.5 Run the terminal-byte and direct-signal cancellation cases repeatedly on Linux without retries and retain the exact failing phase if any repetition fails.
+- [x] 3.6 Re-run native macOS Bash, Zsh, tmux, SSH, and Bash 3.2 ble.sh cancellation matrices to prove the Linux fix does not regress another editor backend.
 
 ## 4. Required Workflow Integrity and Supply-Chain Gates
 
@@ -102,10 +102,10 @@
 
 ## 12. End-to-End Verification and Rollout
 
-- [ ] 12.1 Run formatting, module integrity, vet, shell/workflow lint, strict OpenSpec validation, unit, race, native PTY, tmux, ble.sh, loopback SSH, artifact, and coverage targets from clean disposable state.
+- [x] 12.1 Run formatting, module integrity, vet, shell/workflow lint, strict OpenSpec validation, unit, race, native PTY, tmux, ble.sh, loopback SSH, artifact, and coverage targets from clean disposable state.
 - [x] 12.2 Verify the required manifest reports no missing, duplicated, or unexpectedly skipped cases and that ordinary local tests still skip unavailable opt-in fixtures cleanly.
-- [ ] 12.3 Exercise empty and restored caches, interrupted jobs, failure evidence, and always-run cleanup paths for ble.sh, tmux, SSH, coverage, and temporary provider workspaces.
-- [ ] 12.4 Obtain consecutive green required workflow runs on macOS and Linux, then remove the superseded monolithic or duplicate paths and retain the stable aggregate check name.
+- [x] 12.3 Exercise empty and restored caches, interrupted jobs, failure evidence, and always-run cleanup paths for ble.sh, tmux, SSH, coverage, and temporary provider workspaces.
+- [x] 12.4 Obtain consecutive green required workflow runs on macOS and Linux, then remove the superseded monolithic or duplicate paths and retain the stable aggregate check name.
 - [ ] 12.5 Manually dispatch a bounded scheduled run and verify shuffle, repeat, fuzz, shell-version, distribution, architecture, provider-capability, and vulnerability results are reproducible from recorded metadata.
 - [x] 12.6 Document the branch-protection check name and maintainer update procedure without mutating repository protection settings from CI.
 - [x] 12.7 Run `openspec validate --all --strict`, review the final diff for secret or generated-test artifacts, and confirm every new CI requirement has a deterministic automated case or an explicit protected/manual qualification step.
