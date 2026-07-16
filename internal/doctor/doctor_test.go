@@ -74,6 +74,34 @@ func TestReadyWhenOneAutoProviderIsUsable(t *testing.T) {
 	}
 }
 
+func TestPlatformBoundaryAcceptsOnlyMacOSAndSupportedArchitectures(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		goos      string
+		goarch    string
+		wantOS    Status
+		wantArch  Status
+		wantReady bool
+	}{
+		{name: "apple silicon", goos: "darwin", goarch: "arm64", wantOS: StatusPass, wantArch: StatusPass, wantReady: true},
+		{name: "intel mac", goos: "darwin", goarch: "amd64", wantOS: StatusPass, wantArch: StatusPass, wantReady: true},
+		{name: "invalid platform", goos: "invalid", goarch: "arm64", wantOS: StatusFail, wantArch: StatusPass},
+		{name: "invalid architecture", goos: "darwin", goarch: "invalid", wantOS: StatusPass, wantArch: StatusFail},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			deps := healthyDependencies()
+			deps.GOOS = test.goos
+			deps.GOARCH = test.goarch
+			report := (Runner{Dependencies: deps}).Run(context.Background())
+			checks := checksByID(report)
+			if checks["platform.os"].Status != test.wantOS || checks["platform.arch"].Status != test.wantArch || report.Ready != test.wantReady {
+				t.Fatalf("report = %#v", report)
+			}
+		})
+	}
+}
+
 func TestRunKeysAppendsInteractiveChecksAndUsesConfiguredChords(t *testing.T) {
 	t.Parallel()
 	deps := healthyDependencies()
@@ -375,11 +403,11 @@ func TestProtocolAndUnsupportedShellFailuresHaveStableIDs(t *testing.T) {
 
 func healthyDependencies() Dependencies {
 	return Dependencies{
-		GOOS:      "linux",
+		GOOS:      "darwin",
 		GOARCH:    "amd64",
 		ShellPath: "/bin/zsh",
 		LoadConfig: func() (config.Config, string, error) {
-			return config.Defaults(), "/home/test/.config/intent-sh/config.toml", nil
+			return config.Defaults(), "/Users/test/.config/intent-sh/config.toml", nil
 		},
 		CheckProtocol: func() error { return nil },
 		AdapterStatus: func() AdapterStatus {

@@ -37,15 +37,15 @@ Every provider SHALL be instructed to return exactly one JSON value matching the
 - **THEN** the attempt fails closed and no text from that attempt is inserted into the shell buffer
 
 ### Requirement: Apply safety-biased model instructions
-The provider prompt SHALL require conversion of intent into one command, prohibit execution and file inspection, prohibit adding `sudo` unless explicitly requested, prefer tools available on the target platform, preserve existing shell fragments when possible, and request a non-destructive preview for ambiguous destructive intent.
+The provider prompt SHALL require conversion of intent into one command, prohibit execution and file inspection, prohibit adding `sudo` unless explicitly requested, prefer tools available on macOS and in the supplied command allowlist, preserve existing shell fragments when possible, and request a non-destructive preview for ambiguous destructive intent.
 
 #### Scenario: Ambiguous deletion intent
 - **WHEN** the input asks to delete old log files without an explicit scope and immediate-execution instruction
 - **THEN** the model is instructed to return a preview command that lists matching files instead of deleting them
 
-#### Scenario: Explicit platform context
-- **WHEN** a rewrite is requested from macOS or Linux
-- **THEN** the prompt identifies the target platform and shell so the provider can avoid incompatible syntax
+#### Scenario: Explicit macOS platform context
+- **WHEN** a rewrite is requested from a supported macOS environment
+- **THEN** the prompt identifies Darwin, architecture, and shell so the provider can avoid incompatible syntax
 
 ### Requirement: Invoke official provider CLIs in constrained subprocesses
 The system SHALL invoke the official Claude Code or Codex CLI directly as a subprocess in a newly created empty temporary working directory. It SHALL disable model tools and session persistence, request structured output, apply the strongest supported user-config isolation, and MUST NOT invoke the provider through a shell command string.

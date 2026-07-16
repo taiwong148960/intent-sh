@@ -67,9 +67,12 @@ func TestEvidenceMatrixRejectsUnknownOrCredentialShapedMetadata(t *testing.T) {
 
 	summary := Summary{}
 	if err := SetMatrix(&summary, map[string]string{
-		"os": "linux", "arch": "arm64", "go": "go1.25.1", "bash": "5.3.15(1)-release", "provider": "both", "target": "external",
+		"os": "darwin", "arch": "arm64", "go": "go1.25.1", "bash": "5.3.15(1)-release", "provider": "both", "target": "external",
 	}); err != nil {
 		t.Fatalf("SetMatrix() rejected declared metadata: %v", err)
+	}
+	if err := SetMatrix(&summary, map[string]string{"os": "invalid"}); err == nil {
+		t.Fatal("SetMatrix() accepted an unsupported operating-system value")
 	}
 }
 

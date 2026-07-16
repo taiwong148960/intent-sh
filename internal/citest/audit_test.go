@@ -108,7 +108,7 @@ func TestAuditRejectsRenamedOrUnexpectedTest(t *testing.T) {
 
 func TestAuditRejectsFailedTestAndPackage(t *testing.T) {
 	manifest := exactManifest("TestExpected")
-	stream := event("fail", "TestExpected/linux/process-signal") + event("fail", "TestExpected") + packageEvent("fail")
+	stream := event("fail", "TestExpected/macos/process-signal") + event("fail", "TestExpected") + packageEvent("fail")
 	summary, err := Audit(manifest, "required", strings.NewReader(stream), 4096, 100)
 	if err == nil {
 		t.Fatal("Audit() unexpectedly succeeded")
@@ -116,7 +116,7 @@ func TestAuditRejectsFailedTestAndPackage(t *testing.T) {
 	if summary.Counts.Failed != 1 || len(summary.Problems) != 2 {
 		t.Fatalf("summary = %#v", summary)
 	}
-	if len(summary.Tests) != 1 || summary.Tests[0].Phase != "TestExpected/linux/process-signal" {
+	if len(summary.Tests) != 1 || summary.Tests[0].Phase != "TestExpected/macos/process-signal" {
 		t.Fatalf("failure phase = %#v", summary.Tests)
 	}
 }

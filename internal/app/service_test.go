@@ -74,7 +74,7 @@ func TestRewriteOrchestratesSuccessfulCommand(t *testing.T) {
 	cfg.RewriteKey = "alt+~"
 	cfg.UndoKey = "ctrl+x"
 	contextBuilder := &stubContextBuilder{environment: contextinfo.Environment{
-		OS: "linux", Arch: "arm64", Shell: "zsh", ShellVersion: "5.9", CWD: "/work", AvailableTools: []string{"rg"},
+		OS: "darwin", Arch: "arm64", Shell: "zsh", ShellVersion: "5.9", CWD: "/work", AvailableTools: []string{"rg"},
 	}}
 	router := &stubRouter{result: provider.Result{Provider: provider.NameCodex, Value: protocol.ProviderResult{
 		Status: protocol.ProviderStatusOK, Command: "rg TODO .", Explanation: "searches for TODO", RiskHint: "safe",
@@ -411,7 +411,7 @@ func validRequest() protocol.AdapterRequest {
 func testService(router *stubRouter, evaluator *stubSafety) Service {
 	return Service{
 		LoadConfig: func() (config.Config, string, error) { return config.Defaults(), "/config", nil },
-		Context:    &stubContextBuilder{environment: contextinfo.Environment{OS: "linux", Arch: "amd64", Shell: "zsh", ShellVersion: "5.9", CWD: "/work"}},
+		Context:    &stubContextBuilder{environment: contextinfo.Environment{OS: "darwin", Arch: "amd64", Shell: "zsh", ShellVersion: "5.9", CWD: "/work"}},
 		Router:     router,
 		Safety:     evaluator,
 		Getwd:      func() (string, error) { return "/work", nil },

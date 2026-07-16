@@ -32,7 +32,7 @@ case $fixture in
 esac
 
 cache_root=${INTENT_SH_SHELL_COMPAT_CACHE:-${RUNNER_TEMP:-/tmp}/intent-sh-shell-$fixture}
-if [[ ! $cache_root =~ ^/[A-Za-z0-9._/+@%-]{1,500}$ || $cache_root == / || $cache_root == *'/../'* || $cache_root == *'/./'* ]]; then
+if (( ${#cache_root} > 500 )) || [[ ! $cache_root =~ ^/[A-Za-z0-9._/+@%-]+$ || $cache_root == / || $cache_root == *'/../'* || $cache_root == *'/./'* ]]; then
   printf 'shell compatibility cache path is unsafe\n' >&2
   exit 1
 fi
@@ -45,11 +45,7 @@ manifest=$fixture_root/manifest
 binary=$fixture_root/bin/$name
 
 sha256_file() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
-  else
-    shasum -a 256 "$1" | awk '{print $1}'
-  fi
+  shasum -a 256 "$1" | awk '{print $1}'
 }
 
 script_sha=$(sha256_file "$0")
@@ -74,39 +70,54 @@ if ! valid_cache; then
   temporary=$(mktemp -d "${TMPDIR:-/tmp}/intent-sh-shell-compat.XXXXXXXX")
   trap 'rm -rf -- "$temporary"' EXIT
   archive=$temporary/$archive_name
-  curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 --output "$archive" "$url"
+  curl --ipv4 --fail --location --retry 3 --connect-timeout 20 --max-time 180 --silent --show-error --proto '=https' --tlsv1.2 --output "$archive" "$url"
   actual_sha=$(sha256_file "$archive")
   [[ $actual_sha == "$expected_sha" ]] || {
     printf 'shell compatibility source checksum mismatch\n' >&2
     exit 1
   }
-  mkdir "$temporary/source" "$temporary/prefix"
+  mkdir "$temporary/source" "$temporary/staging"
   tar -xf "$archive" -C "$temporary/source"
   source_root=$temporary/source/$source_name
   [[ -d $source_root && ! -L $source_root ]] || {
     printf 'shell compatibility archive root is incomplete\n' >&2
     exit 1
   }
-  (
+  build_log=$temporary/build.log
+  if ! (
     cd "$source_root"
-    if [[ $name == bash ]]; then
-      ./configure --prefix="$temporary/prefix" --without-bash-malloc >/dev/null
-      make -j2 >/dev/null
-      make install >/dev/null
-    else
-      ./configure --prefix="$temporary/prefix" --disable-gdbm >/dev/null
-      make -j2 >/dev/null
-      make install.bin >/dev/null
+    if [[ $fixture == bash-4.0 ]]; then
+      export CPPFLAGS="${CPPFLAGS:+$CPPFLAGS }-include sys/ioctl.h"
+      export CFLAGS="${CFLAGS:+$CFLAGS }-Wno-error=implicit-function-declaration -Wno-error=implicit-int"
     fi
-  )
-  built=$temporary/prefix/bin/$name
+    if [[ $fixture == zsh-5.8.1 ]]; then
+      # Its generated configure checks predate Clang's implicit-declaration
+      # error and otherwise mis-detect the macOS process APIs they exercise.
+      export CFLAGS="${CFLAGS:+$CFLAGS }-Wno-implicit-function-declaration -Wno-implicit-int"
+    fi
+    if [[ $name == bash ]]; then
+      ./configure --prefix="$fixture_root" --without-bash-malloc
+      make -j4
+      make install DESTDIR="$temporary/staging"
+    else
+      ./configure --prefix="$fixture_root" --disable-gdbm --enable-multibyte --with-tcsetpgrp DL_EXT=bundle
+      make -j4
+      make install.bin install.modules DESTDIR="$temporary/staging"
+    fi
+  ) >"$build_log" 2>&1; then
+    grep -n -C 2 'error:' "$build_log" | tail -n 80 >&2 || tail -n 80 "$build_log" >&2
+    printf 'shell compatibility source build failed\n' >&2
+    exit 1
+  fi
+  staged_prefix=$temporary/staging$fixture_root
+  built=$staged_prefix/bin/$name
   [[ -f $built && ! -L $built && -x $built ]] || {
     printf 'shell compatibility build omitted its executable\n' >&2
     exit 1
   }
   publication=$temporary/publication
-  mkdir -p "$publication/bin"
-  cp "$built" "$publication/bin/$name"
+  mkdir "$publication"
+  cp -R "$staged_prefix/." "$publication/"
   chmod 700 "$publication/bin/$name"
   binary_sha=$(sha256_file "$publication/bin/$name")
   {

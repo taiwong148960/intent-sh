@@ -15,7 +15,7 @@ func TestBuilderUsesOnlyAllowlistedSignals(t *testing.T) {
 		"SSH_TTY":        "SECRET_SSH_TTY",
 		"TERM":           "SECRET_TERM",
 		"TERM_PROGRAM":   "SECRET_TERM_PROGRAM",
-		"WT_SESSION":     "SECRET_WINDOWS_TERMINAL",
+		"WT_SESSION":     "SECRET_UNSUPPORTED_TERMINAL",
 		"TMUX":           "SECRET_TMUX_SOCKET",
 		"LC_ALL":         "en_US.UTF-8",
 		"DATABASE_URL":   "SECRET_DATABASE",
@@ -53,7 +53,7 @@ func TestBuilderUsesOnlyAllowlistedSignals(t *testing.T) {
 	}
 	for _, secret := range []string{
 		"SECRET_REMOTE_ADDRESS", "SECRET_SSH_CLIENT", "SECRET_SSH_TTY", "SECRET_TERM",
-		"SECRET_TERM_PROGRAM", "SECRET_WINDOWS_TERMINAL", "SECRET_TMUX_SOCKET",
+		"SECRET_TERM_PROGRAM", "SECRET_UNSUPPORTED_TERMINAL", "SECRET_TMUX_SOCKET",
 	} {
 		if strings.Contains(string(encoded), secret) {
 			t.Fatalf("terminal or SSH marker %q reached model-visible context: %s", secret, encoded)
@@ -63,7 +63,7 @@ func TestBuilderUsesOnlyAllowlistedSignals(t *testing.T) {
 
 func TestLocalePriorityAndSanitization(t *testing.T) {
 	env := map[string]string{"LC_ALL": "zh_CN.UTF-8\nSECRET", "LANG": "ignored"}
-	b := Builder{GOOS: "linux", GOARCH: "amd64", Getenv: func(k string) string { return env[k] }, LookPath: func(string) (string, error) { return "", errors.New("missing") }}
+	b := Builder{GOOS: "darwin", GOARCH: "amd64", Getenv: func(k string) string { return env[k] }, LookPath: func(string) (string, error) { return "", errors.New("missing") }}
 	got := b.Build("bash\n", "5.2\r", "/tmp")
 	if got.Locale != "zh_CN.UTF-8SECRET" || got.Shell != "bash" || got.ShellVersion != "5.2" {
 		t.Fatalf("sanitized = %#v", got)

@@ -13,26 +13,24 @@ import (
 
 func TestInspectSelectsLikelyStartupFile(t *testing.T) {
 	t.Parallel()
-	home := "/home/tester"
+	home := "/Users/tester"
 	tests := []struct {
 		name   string
 		shell  string
-		goos   string
 		zdot   string
 		exists map[string]bool
 		want   string
 	}{
-		{"zsh default", ShellZsh, "linux", "", nil, filepath.Join(home, ".zshrc")},
-		{"zsh zdotdir", ShellZsh, "darwin", "/config/zsh", nil, "/config/zsh/.zshrc"},
-		{"mac bash default", ShellBash, "darwin", "", nil, filepath.Join(home, ".bash_profile")},
-		{"mac bash existing profile", ShellBash, "darwin", "", map[string]bool{filepath.Join(home, ".profile"): true}, filepath.Join(home, ".profile")},
-		{"linux bash default", ShellBash, "linux", "", nil, filepath.Join(home, ".bashrc")},
-		{"linux bash existing login", ShellBash, "linux", "", map[string]bool{filepath.Join(home, ".bash_profile"): true}, filepath.Join(home, ".bash_profile")},
+		{"zsh default", ShellZsh, "", nil, filepath.Join(home, ".zshrc")},
+		{"zsh zdotdir", ShellZsh, "/config/zsh", nil, "/config/zsh/.zshrc"},
+		{"bash default", ShellBash, "", nil, filepath.Join(home, ".bash_profile")},
+		{"bash existing profile", ShellBash, "", map[string]bool{filepath.Join(home, ".profile"): true}, filepath.Join(home, ".profile")},
+		{"bash preference order", ShellBash, "", map[string]bool{filepath.Join(home, ".bashrc"): true, filepath.Join(home, ".bash_login"): true}, filepath.Join(home, ".bash_login")},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			plan, err := Inspect(test.shell, Options{
-				Home: home, ZDOTDIR: test.zdot, GOOS: test.goos,
+				Home: home, ZDOTDIR: test.zdot,
 				Exists: func(path string) bool { return test.exists[path] },
 				ReadBounded: func(path string, _ int) ([]byte, error) {
 					if path != test.want {
@@ -63,7 +61,7 @@ func TestInspectDetectsOnlyRelevantUnsupportedBindings(t *testing.T) {
 	}
 	for _, test := range tests {
 		plan, err := Inspect(test.shell, Options{
-			Home: "/home/tester", GOOS: "linux",
+			Home:        "/Users/tester",
 			Exists:      func(string) bool { return true },
 			ReadBounded: func(string, int) ([]byte, error) { return []byte(test.content), nil },
 		})
@@ -88,7 +86,7 @@ func TestInspectWithBindingsUsesEffectiveCustomKeys(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.shell, func(t *testing.T) {
 			plan, err := InspectWithBindings(test.shell, Options{
-				Home: "/home/tester", GOOS: "linux",
+				Home:        "/Users/tester",
 				Exists:      func(string) bool { return true },
 				ReadBounded: func(string, int) ([]byte, error) { return []byte(test.content), nil },
 			}, "CTRL+X", "alt+'")
@@ -109,7 +107,7 @@ func TestInspectWithBindingsUsesEffectiveCustomKeys(t *testing.T) {
 func TestInspectWithBindingsRejectsDuplicateReservedAndAdversarialValues(t *testing.T) {
 	t.Parallel()
 	options := Options{
-		Home: "/home/tester", GOOS: "linux",
+		Home: "/Users/tester",
 		ReadBounded: func(string, int) ([]byte, error) {
 			t.Fatal("invalid binding reached startup-file inspection")
 			return nil, nil
@@ -134,7 +132,7 @@ func TestInspectWithBindingsRejectsDuplicateReservedAndAdversarialValues(t *test
 	}
 
 	plan, err := InspectWithBindings(ShellZsh, Options{
-		Home: "/home/tester", GOOS: "linux", Exists: func(string) bool { return false },
+		Home: "/Users/tester", Exists: func(string) bool { return false },
 		ReadBounded: func(string, int) ([]byte, error) { return nil, os.ErrNotExist },
 	}, "alt+;", "alt+'")
 	if err != nil {
@@ -153,7 +151,7 @@ func TestInspectNeverWritesOrExecutesStartupFile(t *testing.T) {
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := Inspect(ShellZsh, Options{Home: dir, GOOS: "darwin"})
+	plan, err := Inspect(ShellZsh, Options{Home: dir})
 	if err != nil {
 		t.Fatal(err)
 	}

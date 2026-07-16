@@ -142,10 +142,10 @@ func (runner Runner) Run(ctx context.Context) Report {
 	report := Report{Ready: true}
 	coreReady := true
 
-	if deps.GOOS == "darwin" || deps.GOOS == "linux" {
+	if deps.GOOS == "darwin" {
 		report.add(StatusPass, "platform.os", "supported operating system", "")
 	} else {
-		report.add(StatusFail, "platform.os", "unsupported operating system", "Use macOS or Linux.")
+		report.add(StatusFail, "platform.os", "unsupported operating system", "Use macOS.")
 		coreReady = false
 		report.FailureKind = apperr.KindConfiguration
 	}

@@ -30,7 +30,7 @@ var (
 		"bash":     regexp.MustCompile(`^[0-9][A-Za-z0-9._+()-]{0,39}$`),
 		"fixture":  regexp.MustCompile(`^(?:bash-4\.0|bash-5\.3|zsh-5\.8\.1|zsh-5\.9\.1)$`),
 		"go":       regexp.MustCompile(`^go1\.[0-9]{1,3}(?:\.[0-9]{1,3})?[A-Za-z0-9._+-]{0,24}$`),
-		"os":       regexp.MustCompile(`^(?:darwin|linux)$`),
+		"os":       regexp.MustCompile(`^darwin$`),
 		"provider": regexp.MustCompile(`^(?:claude|codex|both)$`),
 		"repeat":   regexp.MustCompile(`^(?:2|3|5)$`),
 		"seed":     regexp.MustCompile(`^[1-9][0-9]{0,18}$`),

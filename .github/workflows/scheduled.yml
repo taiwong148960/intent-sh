@@ -34,13 +34,9 @@ env:
 
 jobs:
   stress:
-    name: scheduled / PTY and tmux stress / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: scheduled / PTY and tmux stress
+    runs-on: macos-15
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -51,16 +47,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install current shells and tmux
+      - name: Install current Bash and tmux
         run: |
-          if [[ $RUNNER_OS == Linux ]]; then
-            sudo apt-get update
-            sudo apt-get install --yes ncurses-term tmux zsh
-            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-          else
-            brew install bash tmux
-            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
-          fi
+          brew install bash tmux
+          echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
           echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
       - name: Record bounded stress metadata
         run: bash .github/scripts/print-ci-metadata.sh
@@ -78,14 +68,14 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: scheduled-stress-${{ runner.os }}-summary
+          name: scheduled-stress-${{ runner.arch }}-summary
           path: ${{ runner.temp }}/qualification
           if-no-files-found: ignore
           retention-days: 7
 
   fuzz:
     name: scheduled / independent fuzz budgets
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - name: Check out source
@@ -125,7 +115,7 @@ jobs:
             (( size > 0 && size <= 65536 ))
             IFS= read -r header < "$corpus"
             [[ $header == 'go test fuzz v1' ]]
-            digest=$(sha256sum "$corpus" | awk '{print $1}')
+            digest=$(shasum -a 256 "$corpus" | awk '{print $1}')
             target=${corpus#*/testdata/fuzz/}
             target=${target%%/*}
             printf 'target=%s bytes=%s sha256=%s minimized_by=go-fuzz-engine\n' "$target" "$size" "$digest" >> "$RUNNER_TEMP/fuzz-summary/failing-corpus-metadata"
@@ -141,7 +131,7 @@ jobs:
 
   shell-compatibility:
     name: scheduled / shell compatibility / ${{ matrix.fixture }}
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 50
     strategy:
       fail-fast: false
@@ -159,8 +149,13 @@ jobs:
           cache: true
       - name: Install source-build prerequisites
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes build-essential curl libncurses-dev
+          brew install ncurses
+          ncurses_prefix=$(brew --prefix ncurses)
+          {
+            echo "CPPFLAGS=-I$ncurses_prefix/include"
+            echo "LDFLAGS=-L$ncurses_prefix/lib"
+            echo "PKG_CONFIG_PATH=$ncurses_prefix/lib/pkgconfig"
+          } >> "$GITHUB_ENV"
       - name: Restore only this pinned source-build cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -182,85 +177,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  linux-distributions:
-    name: scheduled / glibc distribution / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
-    steps:
-      - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-      - name: Set up Go from go.mod
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Install PTY shell prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes ncurses-term zsh
-          echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-      - name: Record distribution and libc identity
-        run: |
-          . /etc/os-release
-          printf 'distribution=%s\nversion=%s\narchitecture=%s\nlibc=' "$ID" "$VERSION_ID" "$(uname -m)"
-          ldd --version 2>&1 | sed -n '1p'
-          bash .github/scripts/print-ci-metadata.sh
-      - name: Run strict native PTY qualification
-        run: make native-pty-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
-      - name: Retain sanitized distribution failure evidence
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: distribution-${{ matrix.os }}-summary
-          path: ${{ runner.temp }}/qualification
-          if-no-files-found: ignore
-          retention-days: 7
-
-  native-arm64:
-    name: scheduled / native Linux arm64
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 60
-    steps:
-      - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-      - name: Set up Go from go.mod
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Install arm64 terminal prerequisites
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes ncurses-term tmux zsh
-          echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-          echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
-      - name: Record native arm64 host and terminal metadata
-        run: bash .github/scripts/print-ci-metadata.sh
-      - name: Prove native architecture and run PTY/tmux manifests
-        run: |
-          test "$(go env GOARCH)" = arm64
-          make native-pty-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
-          make tmux-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
-      - name: Retain sanitized native arm64 failure evidence
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: native-linux-arm64-summary
-          path: ${{ runner.temp }}/qualification
-          if-no-files-found: ignore
-          retention-days: 7
-
   provider-capabilities:
     name: scheduled / unauthenticated provider capabilities
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - name: Check out source
@@ -287,8 +206,13 @@ jobs:
           probe_home="$RUNNER_TEMP/provider-probe-home"
           mkdir -m 700 "$probe_home"
           codex="$GITHUB_WORKSPACE/.github/provider-tools/node_modules/@openai/codex/bin/codex.js"
-          claude="$GITHUB_WORKSPACE/.github/provider-tools/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
-          env -i HOME="$probe_home" PATH="$PATH" LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+          case "$(go env GOARCH)" in
+            arm64) claude_package='claude-code-darwin-arm64' ;;
+            amd64) claude_package='claude-code-darwin-x64' ;;
+            *) printf 'unsupported macOS runner architecture\n' >&2; exit 1 ;;
+          esac
+          claude="$GITHUB_WORKSPACE/.github/provider-tools/node_modules/@anthropic-ai/$claude_package/claude"
+          env -i HOME="$probe_home" PATH="$PATH" LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 \
             "$RUNNER_TEMP/provider-capability-probe" -codex "$codex" -claude "$claude" -home "$probe_home" \
             | tee "$RUNNER_TEMP/provider-capability-summary.json"
       - name: Retain only provider name, version, stage, and pass/fail
@@ -302,7 +226,7 @@ jobs:
 
   security:
     name: scheduled / module integrity and Go vulnerabilities
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - name: Check out source
@@ -335,14 +259,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  capacity-boundary:
-    name: scheduled / explicit capacity boundary
-    runs-on: ubuntu-latest
+  architecture-evidence:
+    name: scheduled / macOS architecture evidence
+    runs-on: macos-15
     timeout-minutes: 5
     steps:
-      - name: Record unavailable dimensions without claiming qualification
+      - name: Record native and inspection-only artifact dimensions
         run: |
-          printf '%s\n' \
-            'musl_pty=UNAVAILABLE:no supported hosted musl PTY runner is configured' \
-            'linux_arm64=SELECTED:ubuntu-24.04-arm job must complete independently' \
-            'emulated_foreign_pty=NOT_QUALIFIED:cross artifacts receive inspection only'
+          case "$(uname -m)" in
+            arm64) native='darwin/arm64'; inspected='darwin/amd64' ;;
+            x86_64) native='darwin/amd64'; inspected='darwin/arm64' ;;
+            *) printf 'unsupported macOS runner architecture\n' >&2; exit 1 ;;
+          esac
+          printf 'native=%s\ninspection_only=%s\n' "$native" "$inspected"
