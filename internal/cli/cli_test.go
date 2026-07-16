@@ -17,7 +17,6 @@ import (
 	"github.com/taiwong148960/intent-sh/internal/protocol"
 	"github.com/taiwong148960/intent-sh/internal/provider"
 	"github.com/taiwong148960/intent-sh/internal/safety"
-	setupguide "github.com/taiwong148960/intent-sh/internal/setup"
 )
 
 type cliRouter struct {
@@ -333,7 +332,7 @@ func TestSetupPrintsReversibleGuidanceWithoutWriting(t *testing.T) {
 	}
 }
 
-func TestBashSetupExplainsOptionalBleshWithoutInstallingIt(t *testing.T) {
+func TestBashSetupRequiresNativeReadlineWithoutWriting(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	var stdout, stderr bytes.Buffer
@@ -343,15 +342,9 @@ func TestBashSetupExplainsOptionalBleshWithoutInstallingIt(t *testing.T) {
 	}
 	output := stdout.String()
 	for _, want := range []string{
-		"Optional Bash 3.2 compatibility",
-		protocol.BleshVersion,
-		setupguide.BleshCommit,
-		setupguide.BleshInstallURL,
-		"Load and attach ble.sh before this activation line",
-		"Bash 4.0+",
-		"stock Zsh",
-		"ble-bind M-g/M-u",
-		"does not remove the independently managed ble.sh",
+		"Bash requirement:",
+		"Bash 4.0 or newer with native Readline is required",
+		`eval "$(intent-sh init bash)"`,
 		"No startup file was modified",
 	} {
 		if !strings.Contains(output, want) {

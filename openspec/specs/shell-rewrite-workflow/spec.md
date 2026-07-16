@@ -7,81 +7,47 @@ Define the interactive Zsh and Bash experience for rewriting, regenerating, undo
 ## Requirements
 
 ### Requirement: Supported interactive shell adapters
-The system SHALL preserve protocol-2 interactive adapters for Zsh and Bash on macOS and Linux, including the existing conditional Bash 3.2 ble.sh path. ZLE and Bash 4.0+ native Readline SHALL bind the configured rewrite chord to rewrite or regenerate and the configured undo chord to undo, with defaults of `Alt+G` and `Alt+U`; this change SHALL NOT expand or alter ble.sh binding behavior. Binding values MUST satisfy the shared bounded chord grammar, MUST be distinct, and MUST be rendered through fixed shell-specific encoders rather than evaluated as arbitrary shell text. The adapters MUST use the active editor's editable-line API and MUST NOT use shell history, the clipboard, terminal-screen scraping, Accessibility APIs, or simulated global keystrokes.
+The system SHALL preserve protocol-2 interactive adapters for Zsh and Bash 4.0 or newer on macOS and Linux. ZLE and Bash native Readline SHALL bind the configured rewrite chord to rewrite or regenerate and the configured undo chord to undo, with defaults of `Alt+G` and `Alt+U`. Binding values MUST satisfy the shared bounded chord grammar, MUST be distinct, and MUST be rendered through fixed shell-specific encoders rather than evaluated as arbitrary shell text. The adapters MUST use the active native editor's editable-line API and MUST NOT use shell history, the clipboard, terminal-screen scraping, Accessibility APIs, simulated global keystrokes, or a third-party Bash line-editor backend.
 
 #### Scenario: Activate a supported adapter with defaults
-- **WHEN** a user with no binding overrides loads the version-compatible adapter in an interactive Zsh or Bash session
+- **WHEN** a user with no binding overrides loads the version-compatible adapter in an interactive Zsh or native Bash 4.0+ Readline session
 - **THEN** rewrite and undo are available on `Alt+G` and `Alt+U` without replacing the terminal application
 
 #### Scenario: Activate configured bindings
-- **WHEN** the user configures two valid distinct supported chords and loads the adapter in a new interactive shell
+- **WHEN** the user configures two valid distinct supported chords and loads a ZLE or Readline adapter in a new interactive shell
 - **THEN** rewrite and undo are registered on the derived ZLE or Readline sequences and the defaults are not additionally installed by `intent-sh`
 
 #### Scenario: Reject an invalid binding
 - **WHEN** either configured chord is malformed, reserved, non-ASCII, unsupported, or equal to the other action's chord
 - **THEN** initialization fails before emitting or installing partial adapter bindings and reports the exact configuration field to correct
 
-#### Scenario: Activate stock macOS Bash with ble.sh
-- **WHEN** a user running Bash 3.2 loads a compatible ble.sh editor before initializing `intent-sh`
-- **THEN** the adapter selects the ble.sh backend and installs rewrite, undo, and guarded-accept widgets without replacing the terminal application
-
-#### Scenario: Use ble.sh in modern Bash
-- **WHEN** compatible ble.sh is the active editor in Bash 4.0 or newer
-- **THEN** the adapter selects the ble.sh backend instead of installing bindings against inactive native Readline state
-
-#### Scenario: Reject stock macOS Bash 3.2
-- **WHEN** a user attempts to initialize the Bash adapter in Bash 3.2 without the exact tested attached ble.sh backend
-- **THEN** initialization fails before installing bindings and explains that native rewrite requires Bash 4.0+ while the existing conditional Bash 3.2 path requires the tested ble.sh editor
-
-#### Scenario: Preserve the existing ble.sh contract
-- **WHEN** the exact tested ble.sh backend is active in a previously supported Bash session
-- **THEN** protocol-2 negotiation and its existing fixed bindings continue to work without gaining new terminal-qualification or configurable-binding behavior from this change
-
 #### Scenario: Reject an unsupported Bash generation
-- **WHEN** a user initializes the adapter in Bash older than 3.2
-- **THEN** initialization fails before installing bindings and reports Bash 3.2 as the conditional minimum
+- **WHEN** a user initializes the Bash adapter in Bash older than 4.0
+- **THEN** initialization fails before editor selection or binding installation and reports Bash 4.0 as the minimum
 
 #### Scenario: Reject an incompatible adapter protocol
 - **WHEN** an adapter and binary report different protocol versions
 - **THEN** the adapter leaves the current buffer unchanged and displays an actionable compatibility error
 
 ### Requirement: Select the Bash editor backend by active capability
-The Bash adapter SHALL identify the editor that owns the active line before installing bindings. It SHALL select the ble.sh backend only when the required ble.sh version and widget APIs are attached, SHALL otherwise select native Readline only on Bash 4.0 or newer, and MUST fail closed when neither backend is available. Backend identity SHALL be included in adapter compatibility negotiation and session diagnostics.
+The Bash adapter SHALL verify Bash 4.0 or newer before installing bindings and SHALL use native Readline as its only editor backend. The adapter and binary MUST reject any other reported Bash editor backend before provider invocation. Backend identity SHALL remain included in adapter compatibility negotiation and session diagnostics.
 
-#### Scenario: ble.sh is loaded before intent-sh
-- **WHEN** compatible ble.sh owns the active Bash editor when `intent-sh` initializes
-- **THEN** initialization records the `blesh` backend and uses ble.sh binding and accept-line APIs
+#### Scenario: Initialize native Bash Readline
+- **WHEN** Bash 4.0+ initializes `intent-sh` in its native Readline editor
+- **THEN** initialization records the `readline` backend and installs the configured Readline bindings
 
-#### Scenario: ble.sh is loaded in the wrong order
-- **WHEN** Bash 3.x evaluates the `intent-sh` activation before ble.sh is attached
-- **THEN** initialization installs no partial bindings and reports the required activation order
+#### Scenario: Reject an old Bash before binding
+- **WHEN** Bash older than 4.0 initializes `intent-sh`
+- **THEN** the version check rejects the session before binding installation
+
+#### Scenario: Reject a non-native Bash backend
+- **WHEN** an adapter request reports a Bash editor backend other than `readline`
+- **THEN** the binary rejects it as incompatible before invoking a provider or returning a replacement
 
 #### Scenario: No history-based fallback is available
-- **WHEN** neither a native editable-buffer API nor a compatible ble.sh API is available
-- **THEN** the adapter refuses interactive rewrite rather than accepting the line as a comment, reading it back from history, injecting keystrokes, or evaluating generated output
+- **WHEN** the native editable-buffer API is unavailable
+- **THEN** the adapter refuses interactive rewrite rather than accepting the line as a comment, reading it back from history, injecting keystrokes, evaluating generated output, or switching to another editor backend
 
-### Requirement: Preserve workflow and safety parity in the ble.sh backend
-The ble.sh backend SHALL expose the complete current buffer and cursor to the existing rewrite protocol and SHALL preserve the same original-buffer, regeneration, undo, request-ID, failure, cancellation, and risk state semantics as the native adapters. It SHALL implement dangerous-command confirmation as a ble.sh editor widget that blocks the first Enter for an unchanged dangerous result and delegates the second unchanged Enter to ble.sh's normal acceptance path. It MUST NOT execute generated output itself.
-
-#### Scenario: Rewrite and undo in Bash 3.2
-- **WHEN** a Bash 3.2 user rewrites a non-empty buffer through ble.sh and then presses `Alt+U` without editing the generated command
-- **THEN** the validated result first replaces the complete line without executing and undo later restores the exact original buffer and cursor
-
-#### Scenario: Manual editing invalidates ble.sh state
-- **WHEN** a user changes any part of a generated command in the ble.sh editor
-- **THEN** regenerate, undo, and dangerous-confirmation logic treat the edited buffer as user-owned and do not apply stale state
-
-#### Scenario: Dangerous result requires two Enters
-- **WHEN** an unchanged dangerous generated command is visible in the ble.sh editor
-- **THEN** the first Enter leaves it editable and warns, while the second consecutive unchanged Enter delegates to ble.sh's normal accept-line behavior
-
-#### Scenario: Cancel a ble.sh rewrite
-- **WHEN** a Bash 3.2 user presses `Ctrl+C` while a provider is running
-- **THEN** the provider process tree is terminated, fallback stops, the pre-request buffer is preserved, and ble.sh returns to normal editing
-
-#### Scenario: Rewrite a Unicode buffer
-- **WHEN** a ble.sh buffer contains non-ASCII text and the cursor is not at the beginning
-- **THEN** the adapter reports a protocol-consistent cursor position, replaces the complete buffer correctly, and can restore the original editor-native cursor without splitting a character
 
 ### Requirement: Rewrite the complete current buffer
 On an initial rewrite action, the adapter SHALL send the complete editable buffer, cursor position, and supported shell context to the core. After a successful validated result, it SHALL replace the complete buffer with the command, move the cursor to the end, and preserve the pre-rewrite buffer as the original.

@@ -106,7 +106,7 @@ func TestRewriteOrchestratesSuccessfulCommand(t *testing.T) {
 	if router.request.Model != cfg.Model || router.request.Timeout != 17*time.Second || !strings.Contains(router.request.Prompt, `"buffer":"find TODOs"`) {
 		t.Fatalf("provider request = %#v", router.request)
 	}
-	for _, prohibited := range []string{"editorBackend", protocol.BleshVersion, cfg.RewriteKey, cfg.UndoKey, "rewriteKey", "undoKey", "TERM_PROGRAM"} {
+	for _, prohibited := range []string{"editorBackend", cfg.RewriteKey, cfg.UndoKey, "rewriteKey", "undoKey", "TERM_PROGRAM"} {
 		if strings.Contains(router.request.Prompt, prohibited) {
 			t.Fatalf("local binding or terminal metadata %q reached the model prompt: %q", prohibited, router.request.Prompt)
 		}
@@ -157,14 +157,6 @@ func TestValidateRequestFailures(t *testing.T) {
 			r.Shell, r.ShellVersion = "bash", "3.2.57(1)-release"
 			r.EditorBackend, r.EditorVersion = protocol.EditorBackendReadline, "3.2.57(1)-release"
 		}, apperr.KindProtocol},
-		{"blesh on bash 3.1", func(r *protocol.AdapterRequest) {
-			r.Shell, r.ShellVersion = "bash", "3.1.23(1)-release"
-			r.EditorBackend, r.EditorVersion = protocol.EditorBackendBlesh, protocol.BleshVersion
-		}, apperr.KindProtocol},
-		{"unverified blesh", func(r *protocol.AdapterRequest) {
-			r.Shell, r.ShellVersion = "bash", "3.2.57(1)-release"
-			r.EditorBackend, r.EditorVersion = protocol.EditorBackendBlesh, "0.4.0-devel3"
-		}, apperr.KindProtocol},
 		{"unknown bash backend", func(r *protocol.AdapterRequest) {
 			r.Shell, r.ShellVersion = "bash", "5.2.37(1)-release"
 			r.EditorBackend, r.EditorVersion = "other", "1"
@@ -201,14 +193,6 @@ func TestValidateRequestAcceptsCoherentEditorBackends(t *testing.T) {
 			r.Shell, r.ShellVersion = "bash", "4.0.44(1)-release"
 			r.EditorBackend, r.EditorVersion = protocol.EditorBackendReadline, r.ShellVersion
 		}},
-		{name: "Bash 3.2 ble.sh", mutate: func(r *protocol.AdapterRequest) {
-			r.Shell, r.ShellVersion = "bash", "3.2.57(1)-release"
-			r.EditorBackend, r.EditorVersion = protocol.EditorBackendBlesh, protocol.BleshVersion
-		}},
-		{name: "modern Bash ble.sh", mutate: func(r *protocol.AdapterRequest) {
-			r.Shell, r.ShellVersion = "bash", "5.2.37(1)-release"
-			r.EditorBackend, r.EditorVersion = protocol.EditorBackendBlesh, protocol.BleshVersion
-		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -227,6 +211,40 @@ func TestRewriteRejectsIncoherentBackendBeforeProvider(t *testing.T) {
 	router := &stubRouter{}
 	request := validRequest()
 	request.EditorBackend = protocol.EditorBackendReadline
+	_, err := testService(router, &stubSafety{}).Rewrite(context.Background(), request)
+	if apperr.KindOf(err) != apperr.KindProtocol {
+		t.Fatalf("kind = %q; err=%v", apperr.KindOf(err), err)
+	}
+	if router.calls != 0 {
+		t.Fatalf("provider was called %d times", router.calls)
+	}
+}
+
+func TestRewriteRejectsUnsupportedBashBeforeProvider(t *testing.T) {
+	t.Parallel()
+	router := &stubRouter{}
+	request := validRequest()
+	request.Shell = safety.ShellBash
+	request.ShellVersion = "3.2.57(1)-release"
+	request.EditorBackend = protocol.EditorBackendReadline
+	request.EditorVersion = request.ShellVersion
+	_, err := testService(router, &stubSafety{}).Rewrite(context.Background(), request)
+	if apperr.KindOf(err) != apperr.KindProtocol {
+		t.Fatalf("kind = %q; err=%v", apperr.KindOf(err), err)
+	}
+	if router.calls != 0 {
+		t.Fatalf("provider was called %d times", router.calls)
+	}
+}
+
+func TestRewriteRejectsNonNativeBashBackendBeforeProvider(t *testing.T) {
+	t.Parallel()
+	router := &stubRouter{}
+	request := validRequest()
+	request.Shell = safety.ShellBash
+	request.ShellVersion = "5.2.37(1)-release"
+	request.EditorBackend = "alternate"
+	request.EditorVersion = "1"
 	_, err := testService(router, &stubSafety{}).Rewrite(context.Background(), request)
 	if apperr.KindOf(err) != apperr.KindProtocol {
 		t.Fatalf("kind = %q; err=%v", apperr.KindOf(err), err)

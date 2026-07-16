@@ -56,17 +56,13 @@ COVERPKG := $(shell go list $(PRODUCT_PACKAGES) | paste -sd, -)
 
 SHELLTEST_HARNESS_RUN := ^(TestQualificationStrictFlagIsExplicit|TestTmuxHarnessUsesPrivateSocketEnvironmentAndCleanInnerShell|TestSSHHarnessRejectsUnsafeCleanupPathsAndDisablesForwarding|TestSSHSmokeHarnessSkipsWithoutExplicitTarget|TestSSHMarkerValuesRemainOutsideLocalProviderBoundaries)$$
 NATIVE_PTY_RUN := ^(TestDangerousConfirmationInPTY|TestOrdinaryCommandUsesOneEnter|TestEditingDisarmsDangerousFingerprint|TestNativeTerminalConformanceLifecycleMatrix|TestTERMResizeAndUnicodeFailureConformance|TestBindingMismatchAndConcurrentSessionsKeepBufferStateLocal|TestNativeSetupCustomProbeResetDowngradeAndRemovalJourney|TestMVPRewriteWorkflowInPTY|TestBashCancellationAndTeardownQualification|TestNativeProviderFailureMatrixInPTY|TestNativeEditorsUnicodeCursorRoundTripInPTY)$$
-BASH32_NEGATIVE_RUN := ^(TestBash32WithoutBleshFailsBeforeBinding|TestBash32MissingBleshIsInertInPTY)$$
 TMUX_RUN := ^(TestTmuxHarnessUsesPrivateSocketEnvironmentAndCleanInnerShell|TestTmuxLifecycleMatrix|TestTmuxDetachReattachAndSessionStateIsolation|TestTmuxInterceptedRootBindingFailsKeyDeliveryDiagnostic)$$
-BLESH_COMMON_RUN := TestBleshEditCommandContract|TestBleshAdapterInitialization|TestBleshOrdinaryAcceptanceContract|TestBleshAcceptAdviceDelegationContract|TestBleshAcceptAdviceRuntimeDelegationContract|TestBleshInitializationRefusesConflictsWithoutPartialBindings|TestBleshMVPRewriteLifecycleInPTY|TestBleshStaleResponseInPTY|TestBleshAdapterPreservesOrdinaryAcceptanceInPTY|TestBleshClaudeEndToEndNoAutoExecutionInPTY|TestBleshSourceSetupDoctorAndRemovalJourneyInPTY|TestBleshMVPSafetyAndFailureParityInPTY|TestBleshMVPTimeoutAndCancellationInPTY|TestBleshDetachRequiresExplicitReinitializationInPTY|TestBleshUnicodeCursorRoundTripInPTY
-BLESH_MODERN_RUN := ^($(BLESH_COMMON_RUN)|TestModernBashNativeAndBleshAcceptanceContract)$$
-BLESH_BASH32_RUN := ^($(BLESH_COMMON_RUN)|TestBleshInitializationFailuresLeaveNoPartialIntegration|TestBash32MissingBleshIsInertInPTY)$$
 SSH_RUN := ^(TestSSHRemoteBashAndZshConformance|TestSSHDirectDisconnectReapsRemoteProvider|TestSSHToTmuxReconnectStateAndPaneIsolation)$$
 SHELL_COMPAT_RUN := ^TestPinnedShellCompatibilityLifecycle$$
 
 .PHONY: \
 	fmt fmt-check vet test test-unit shelltest-harness-test native-pty-test \
-	bash32-negative-test tmux-test blesh-fixture-test blesh-test ssh-test ssh-opt-in-test \
+	tmux-test ssh-test ssh-opt-in-test \
 	artifact-build artifact-inspect artifact-test race-test coverage-test scheduled-stress static-check \
 	shell-compatibility-test external-ssh-test real-provider-test \
 	ci-tools module-check shell-check shell-lint workflow-lint openspec-check \
@@ -95,28 +91,8 @@ shelltest-harness-test:
 native-pty-test:
 	INTENT_SH_CI_STRICT=1 INTENT_SH_REQUIRE_GOARCH=$(GOARCH_VALUE) go test -json ./internal/shelltest -run '$(NATIVE_PTY_RUN)' -count=1 | $(AUDITOR) -suite native-pty $(AUDIT_MATRIX) $(call AUDIT_OUTPUT,native-pty)
 
-bash32-negative-test:
-	INTENT_SH_CI_STRICT=1 go test -json ./internal/shelltest -run '$(BASH32_NEGATIVE_RUN)' -count=1 | $(AUDITOR) -suite bash32-negative $(AUDIT_MATRIX) $(call AUDIT_OUTPUT,bash32-negative)
-
 tmux-test:
 	INTENT_SH_CI_STRICT=1 INTENT_SH_REQUIRE_GOARCH=$(GOARCH_VALUE) go test -json ./internal/shelltest -run '$(TMUX_RUN)' -count=1 | $(AUDITOR) -suite tmux $(AUDIT_MATRIX) $(call AUDIT_OUTPUT,tmux)
-
-# BLESH_SUITE is intentionally limited to the two checked-in qualification modes.
-BLESH_SUITE ?= blesh-modern
-ifeq ($(BLESH_SUITE),blesh-bash32)
-BLESH_RUN := $(BLESH_BASH32_RUN)
-else ifeq ($(BLESH_SUITE),blesh-modern)
-BLESH_RUN := $(BLESH_MODERN_RUN)
-else
-$(error BLESH_SUITE must be blesh-modern or blesh-bash32)
-endif
-
-blesh-test:
-	@test -n "$$INTENT_SH_TEST_BLESH" || { echo "INTENT_SH_TEST_BLESH is required" >&2; exit 1; }
-	INTENT_SH_CI_STRICT=1 INTENT_SH_REQUIRE_GOARCH=$(GOARCH_VALUE) INTENT_SH_TEST_BLESH_BASH_MODE=$(if $(filter blesh-modern,$(BLESH_SUITE)),modern,bash32) go test -json ./internal/shelltest -run '$(BLESH_RUN)' -count=1 -timeout=30m | $(AUDITOR) -suite $(BLESH_SUITE) $(AUDIT_MATRIX) $(call AUDIT_OUTPUT,$(BLESH_SUITE))
-
-blesh-fixture-test:
-	bash .github/scripts/test-install-blesh-test.sh
 
 ssh-test:
 	@test -n "$$INTENT_SH_TEST_SSH_TARGET" || { echo "INTENT_SH_TEST_SSH_TARGET is required" >&2; exit 1; }
@@ -183,10 +159,7 @@ shell-compatibility-test:
 shell-check:
 	bash -n shell/bash/intent-sh.bash
 	zsh -n shell/zsh/intent-sh.zsh
-	bash -n .github/scripts/install-blesh-test.sh
-	bash -n .github/scripts/test-install-blesh-test.sh
 	bash -n .github/scripts/install-ci-tools.sh
-	bash -n .github/scripts/install-bash32-test.sh
 	bash -n .github/scripts/print-ci-metadata.sh
 	bash -n .github/scripts/setup-loopback-ssh.sh
 	bash -n .github/scripts/install-shell-compat.sh
@@ -203,10 +176,7 @@ module-check:
 shell-lint:
 	PATH="$(CI_TOOLS_PATH):$$PATH" shellcheck --severity=warning \
 		shell/bash/intent-sh.bash \
-		.github/scripts/install-blesh-test.sh \
-		.github/scripts/test-install-blesh-test.sh \
 		.github/scripts/install-ci-tools.sh \
-		.github/scripts/install-bash32-test.sh \
 		.github/scripts/print-ci-metadata.sh \
 		.github/scripts/setup-loopback-ssh.sh \
 		.github/scripts/install-shell-compat.sh

@@ -76,14 +76,14 @@ func TestAdapterFrameFailures(t *testing.T) {
 
 func TestAdapterRequestJSONIncludesEditorMetadata(t *testing.T) {
 	req := AdapterRequest{
-		Version: AdapterVersion, Action: ActionRewrite, Shell: "bash", ShellVersion: "3.2.57(1)-release",
-		EditorBackend: EditorBackendBlesh, EditorVersion: BleshVersion, Buffer: "列出文件", Cursor: len("列出"), RequestID: "json-1",
+		Version: AdapterVersion, Action: ActionRewrite, Shell: "bash", ShellVersion: "5.2.37(1)-release",
+		EditorBackend: EditorBackendReadline, EditorVersion: "5.2.37(1)-release", Buffer: "列出文件", Cursor: len("列出"), RequestID: "json-1",
 	}
 	data, err := json.Marshal(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"editorBackend":"blesh"`, `"editorVersion":"` + BleshVersion + `"`, `"cursor":6`} {
+	for _, want := range []string{`"editorBackend":"readline"`, `"editorVersion":"5.2.37(1)-release"`, `"cursor":6`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("adapter JSON %q does not contain %q", data, want)
 		}

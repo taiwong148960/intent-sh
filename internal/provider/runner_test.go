@@ -129,8 +129,6 @@ func TestProcessRunnerBoundariesAndCleanup(t *testing.T) {
 			"INTENT_SH_ADAPTER_CONFLICTS=secret-binding",
 			"INTENT_SH_REWRITE_KEY=secret-rewrite-key",
 			"INTENT_SH_UNDO_KEY=secret-undo-key",
-			"BLE_VERSION=secret-blesh-version",
-			"BLE_ATTACHED=secret-blesh-attachment",
 			"TERM=secret-term",
 			"TERM_PROGRAM=secret-term-program",
 			"WT_SESSION=secret-terminal-session",
@@ -176,7 +174,7 @@ func TestProcessRunnerBoundariesAndCleanup(t *testing.T) {
 		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", "INTENT_SECRET",
 		"INTENT_SH_ADAPTER_PROTOCOL", "INTENT_SH_ADAPTER_BACKEND", "INTENT_SH_ADAPTER_EDITOR_VERSION",
 		"INTENT_SH_ADAPTER_READY", "INTENT_SH_ADAPTER_FAILURE", "INTENT_SH_ADAPTER_CONFLICTS",
-		"INTENT_SH_REWRITE_KEY", "INTENT_SH_UNDO_KEY", "BLE_VERSION", "BLE_ATTACHED",
+		"INTENT_SH_REWRITE_KEY", "INTENT_SH_UNDO_KEY",
 		"TERM", "TERM_PROGRAM", "WT_SESSION", "TMUX", "SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY",
 	} {
 		if _, ok := capture.Env[key]; ok {

@@ -45,21 +45,6 @@ jobs:
       - name: Run read-only integrity gates
         run: make static-check
 
-  fixture-installer:
-    name: required / fixture installer / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-      - name: Verify network-free fixture publication and cache repair
-        run: make blesh-fixture-test
 
   unit:
     name: required / unit / ${{ matrix.os }}
@@ -220,106 +205,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  bash32-negative:
-    name: required / stock Bash 3.2 fail closed
-    runs-on: macos-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-      - name: Set up Go from go.mod
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Select stock Bash 3.2
-        run: echo 'INTENT_SH_TEST_BASH32=/bin/bash' >> "$GITHUB_ENV"
-      - name: Run strict fail-closed negative manifest
-        run: make bash32-negative-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
-      - name: Retain sanitized failure summary
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bash32-negative-summary
-          path: ${{ runner.temp }}/qualification
-          if-no-files-found: ignore
-          retention-days: 7
-
-  blesh:
-    name: required / ble.sh / ${{ matrix.suite }} / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            suite: blesh-modern
-            bash32: false
-          - os: macos-latest
-            suite: blesh-modern
-            bash32: false
-          - os: ubuntu-latest
-            suite: blesh-bash32
-            bash32: true
-          - os: macos-latest
-            suite: blesh-bash32
-            bash32: true
-    steps:
-      - name: Check out source
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          persist-credentials: false
-      - name: Set up Go from go.mod
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Install build and shell prerequisites
-        run: |
-          if [[ $RUNNER_OS == Linux ]]; then
-            sudo apt-get update
-            sudo apt-get install --yes build-essential gawk zsh
-            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
-          else
-            brew install bash gawk
-            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
-          fi
-      - name: Restore Linux Bash 3.2 build cache
-        if: runner.os == 'Linux' && matrix.bash32
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ runner.temp }}/intent-sh-bash32
-          key: bash32-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/ci/bash32-fixture.env', '.github/scripts/install-bash32-test.sh') }}
-      - name: Select pinned Bash 3.2
-        if: matrix.bash32
-        env:
-          INTENT_SH_TEST_BASH32_CACHE: ${{ runner.temp }}/intent-sh-bash32
-        run: bash .github/scripts/install-bash32-test.sh
-      - name: Build complete pinned ble.sh from an empty cache
-        env:
-          INTENT_SH_TEST_BLESH_CACHE: ${{ runner.temp }}/intent-sh-blesh-empty
-        run: bash .github/scripts/install-blesh-test.sh
-      - name: Verify restored ble.sh fixture without rebuilding
-        env:
-          INTENT_SH_TEST_BLESH_CACHE: ${{ runner.temp }}/intent-sh-blesh-empty
-        run: bash .github/scripts/install-blesh-test.sh
-      - name: Record bounded Bash, ble.sh, and fixture metadata
-        env:
-          INTENT_SH_TEST_BLESH_CACHE: ${{ runner.temp }}/intent-sh-blesh-empty
-        run: bash .github/scripts/print-ci-metadata.sh
-      - name: Run strict full ble.sh manifest
-        run: make blesh-test BLESH_SUITE=${{ matrix.suite }} QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
-      - name: Retain sanitized failure summary
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: blesh-${{ matrix.suite }}-${{ runner.os }}-summary
-          path: ${{ runner.temp }}/qualification
-          if-no-files-found: ignore
-          retention-days: 7
 
   loopback-ssh:
     name: required / loopback SSH
@@ -523,7 +408,7 @@ jobs:
   aggregate:
     name: required / aggregate
     if: always()
-    needs: [static, fixture-installer, unit, race, native-pty, tmux, bash32-negative, blesh, loopback-ssh, artifact-build, artifact-inspection, artifact-native, coverage]
+    needs: [static, unit, race, native-pty, tmux, loopback-ssh, artifact-build, artifact-inspection, artifact-native, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -12,11 +12,11 @@ The repository SHALL run stable, explicitly named required checks for pull reque
 - **THEN** every required static, unit, integration, and build gate runs under a stable check name and the change cannot qualify while any gate fails
 
 #### Scenario: Detect an unavailable integration prerequisite
-- **WHEN** a required PTY, shell, tmux, ble.sh, SSH, or artifact test cannot find its declared prerequisite
+- **WHEN** a required PTY, shell, tmux, SSH, or artifact test cannot find its declared prerequisite
 - **THEN** its dedicated job fails with the missing capability instead of reporting a skipped or passing suite
 
 #### Scenario: Partition overlapping suites
-- **WHEN** broad package tests and dedicated integration targets would select the same tmux, ble.sh, SSH, or provider test
+- **WHEN** broad package tests and dedicated integration targets would select the same tmux, SSH, or provider test
 - **THEN** the workflow excludes the overlap or uses an explicit test manifest so each required matrix case runs exactly once
 
 ### Requirement: Verify source, specification, and workflow integrity
@@ -49,24 +49,16 @@ Required integration jobs SHALL execute the built `intent-sh` binary with fake C
 - **WHEN** the scheduled compatibility matrix selects a supported editor mode, shell version, terminal description, or locale
 - **THEN** the same buffer, cursor, confirmation, privacy, and no-auto-execution invariants hold for that declared variant
 
-### Requirement: Qualify tmux and ble.sh hermetically
-Required integration jobs SHALL run the isolated tmux lifecycle on macOS and Linux and the pinned ble.sh contract on every supported Bash generation represented by CI. The ble.sh source, required submodules, and built fixture MUST be pinned and integrity-verified; a cache hit MUST be revalidated before use. tmux tests MUST use a private socket and empty configuration, and neither suite may inspect or mutate user state.
-
-#### Scenario: Build the pinned ble.sh fixture
-- **WHEN** CI prepares ble.sh from an empty cache
-- **THEN** it fetches every pinned source component required by the build, verifies its revision or checksum, builds the expected version, and publishes only a verified test artifact
-
-#### Scenario: Reject an incomplete or poisoned cache
-- **WHEN** a restored ble.sh cache lacks a required submodule, has an unexpected hash or version, or contains only a partial prior build
-- **THEN** verification rejects it and rebuilds safely or fails before any compatibility test is reported as passing
+### Requirement: Qualify tmux hermetically
+Required integration jobs SHALL run the isolated tmux lifecycle on macOS and Linux. tmux tests MUST use a private socket and empty configuration, MUST qualify supported Bash 4.0+ native Readline and Zsh sessions, and MUST NOT inspect or mutate user state. CI MUST NOT maintain a fixture, cache, manifest suite, or required job for an unsupported Bash generation or alternate Bash editor.
 
 #### Scenario: Reattach an isolated tmux client
 - **WHEN** the test client detaches and reattaches to a live Bash or Zsh pane
 - **THEN** editable-buffer and shell-local rewrite state survive only in that pane and the test leaves no private tmux server running
 
-#### Scenario: Exercise ble.sh across supported Bash generations
-- **WHEN** CI selects stock macOS Bash 3.2 or a supported modern Bash with the exact pinned ble.sh backend
-- **THEN** the full applicable rewrite, cancellation, safety, Unicode, initialization, and removal contract runs rather than only an acceptance-key smoke test
+#### Scenario: Exclude removed shell fixtures
+- **WHEN** required CI constructs its shell and editor matrices
+- **THEN** it selects supported native Bash/Zsh cases only and contains no below-minimum Bash or alternate-editor fixture dependency
 
 ### Requirement: Qualify the SSH transport without external credentials
 A required Linux job SHALL create an ephemeral loopback OpenSSH server and run the remote Bash and Zsh conformance harness through the real SSH client and allocated PTY. The target, host keys, client key, known-host data, home, port, staged binaries, fake providers, and remote temporary directory MUST be isolated to the job and removed afterward. The job SHALL cover direct remote behavior and SSH-to-tmux detach and reattach without contacting an external host.

@@ -1,21 +1,4 @@
-# Installation Diagnostics Specification
-
-## Purpose
-
-Define the supported binary distribution, reversible shell activation, validated configuration, readiness diagnostics, compatibility checks, and removal guidance.
-
-## Requirements
-
-### Requirement: Build as one supported Go binary
-The project SHALL build one `intent-sh` executable for macOS and Linux on amd64 and arm64. The executable SHALL include rewrite, adapter initialization, setup guidance, configuration, doctor, and version commands and SHALL embed protocol-compatible Zsh and Bash adapter assets.
-
-#### Scenario: Build from source
-- **WHEN** a developer with the supported Go toolchain runs the documented source build
-- **THEN** one executable is produced without requiring a desktop app, database, daemon, or hosted service
-
-#### Scenario: Inspect the version
-- **WHEN** the user runs `intent-sh version`
-- **THEN** the output identifies the binary version and adapter protocol version
+## MODIFIED Requirements
 
 ### Requirement: Activate adapters explicitly and reversibly
 `intent-sh init zsh|bash` SHALL load and validate the effective rewrite and undo chords before emitting the embedded adapter for the requested shell. `intent-sh setup zsh|bash` SHALL report the appropriate startup file, an idempotent activation line, the effective default or configured bindings, detected static conflicts, and removal guidance, but MUST NOT modify a startup file, shell keymap, terminal preference, tmux configuration, or user configuration by default. Bash setup guidance SHALL state that Bash 4.0 or newer with native Readline is required. Neither setup nor initialization SHALL download, install, or configure a third-party line editor.
@@ -47,29 +30,6 @@ The project SHALL build one `intent-sh` executable for macOS and Linux on amd64 
 #### Scenario: Request an unsupported shell
 - **WHEN** the user requests setup or initialization for Fish, Nushell, PowerShell, or an unknown shell
 - **THEN** the command exits nonzero with the supported Zsh/Bash choices and makes no system change
-
-### Requirement: Provide validated secret-free configuration
-Configuration SHALL use `${XDG_CONFIG_HOME:-$HOME/.config}/intent-sh/config.toml`, with defaults of auto routing, priority `claude` then `codex`, a 30-second timeout, no forced model, rewrite key `alt+g`, and undo key `alt+u`. The parser SHALL reject unknown keys, unknown providers, duplicate priority entries, timeouts outside 1–120 seconds, malformed or unsupported chords, reserved control chords, and equal rewrite/undo chords. The file MUST NOT contain provider credentials, raw terminal bytes, or terminal application settings.
-
-#### Scenario: Run without a configuration file
-- **WHEN** no config file exists
-- **THEN** the binary uses all documented provider and binding defaults without creating a file
-
-#### Scenario: Set a supported value
-- **WHEN** the user uses `intent-sh config set` with a valid provider, priority, timeout, model, rewrite key, or undo key value
-- **THEN** the configuration is updated atomically and `config show` reports the effective non-secret settings in canonical form
-
-#### Scenario: Set a reserved chord
-- **WHEN** a user attempts to assign Enter, `Ctrl+C`, terminal flow-control or signal keys, EOF, or an adapter-private continuation key to rewrite or undo
-- **THEN** the update is rejected atomically with the exact field and reason and the previous configuration remains effective
-
-#### Scenario: Configure the same chord twice
-- **WHEN** rewrite and undo normalize to the same canonical chord
-- **THEN** configuration is rejected before adapter initialization or provider invocation
-
-#### Scenario: Load invalid configuration
-- **WHEN** the file contains an unknown key or invalid provider, timeout, model, or chord value
-- **THEN** rewrite and adapter initialization fail before invoking a provider and report the exact configuration field to correct
 
 ### Requirement: Diagnose local readiness without leaking secrets
 Ordinary `intent-sh doctor` SHALL check supported platform and architecture, Bash 4.0+/Zsh compatibility, native ZLE/Readline editor compatibility, config and chord validity, adapter/binary protocol-2 compatibility, effective-key conflicts visible in the selected startup file, configured provider executable and compatible version, and official CLI login readiness. `intent-sh doctor --keys` SHALL additionally perform the bounded opt-in controlling-terminal delivery probe for rewrite, undo, Enter, and cancellation. Both modes SHALL emit stable check identifiers, actionable guidance, and no tokens, credential-file contents, prompts, shell buffers, history, screen contents, or unbounded received bytes.

@@ -201,15 +201,10 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "- Change native bindings with `intent-sh config set rewrite_key <chord>` and `undo_key <chord>`, then start a new shell.")
 	fmt.Fprintln(stdout, "- Supported chords are one Alt+printable-ASCII key or one unreserved Ctrl+letter; defaults are Alt+G and Alt+U.")
 	if plan.Shell == setupguide.ShellBash {
-		fmt.Fprintln(stdout, "\nOptional Bash 3.2 compatibility (user managed):")
-		fmt.Fprintf(stdout, "- Bash 3.2 requires ble.sh %s from commit %s.\n", plan.BleshVersion, plan.BleshCommit)
-		fmt.Fprintf(stdout, "- Install and manage ble.sh separately using the official project: %s\n", plan.BleshInstallURL)
-		fmt.Fprintln(stdout, "- Load and attach ble.sh before this activation line; setup never downloads or sources it.")
-		fmt.Fprintln(stdout, "- Bash 4.0+ can use native Readline when ble.sh is not attached; stock Zsh is another native alternative.")
-		fmt.Fprintln(stdout, "- The existing ble.sh compatibility path remains on Alt+G/Alt+U; custom chords require native Readline or Zsh.")
-		fmt.Fprintln(stdout, "- Review existing ble-bind M-g/M-u bindings and accept-line advice before activation.")
+		fmt.Fprintln(stdout, "\nBash requirement:")
+		fmt.Fprintln(stdout, "- Bash 4.0 or newer with native Readline is required.")
 	}
-	if len(plan.Conflicts) > 0 || plan.BleshLoadOrderConflict {
+	if len(plan.Conflicts) > 0 {
 		fmt.Fprintln(stdout, "\nWarnings:")
 		for _, conflict := range plan.Conflicts {
 			backend := conflict.Backend
@@ -218,14 +213,8 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 			}
 			fmt.Fprintf(stdout, "- %s already has a custom %s %s binding; review it before activation.\n", plan.Shell, backend, conflict.Key)
 		}
-		if plan.BleshLoadOrderConflict {
-			fmt.Fprintln(stdout, "- intent-sh appears before ble.sh in the startup file; move the intent-sh activation after ble.sh is attached.")
-		}
 	}
 	fmt.Fprintf(stdout, "\nRemoval: delete this exact line from %s:\n%s\n", textsafe.Terminal(plan.StartupFile, 4096), plan.Activation)
-	if plan.Shell == setupguide.ShellBash {
-		fmt.Fprintln(stdout, "This removes only intent-sh integration; it does not remove the independently managed ble.sh installation.")
-	}
 	fmt.Fprintln(stdout, "\nNo startup file was modified.")
 	return apperr.ExitOK
 }

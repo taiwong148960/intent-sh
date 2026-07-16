@@ -96,31 +96,6 @@ func TestEditingDisarmsDangerousFingerprint(t *testing.T) {
 	}
 }
 
-func TestBash32WithoutBleshFailsBeforeBinding(t *testing.T) {
-	path, err := exec.LookPath("/bin/bash")
-	if err != nil {
-		qualificationSkipf(t, "system Bash is not available")
-	}
-	if major := bashMajor(t, path); major >= 4 {
-		qualificationSkipf(t, "system Bash is %d, not an incompatible version", major)
-	}
-	script := filepath.Join(repositoryRoot(t), "shell", "bash", "intent-sh.bash")
-	command := fmt.Sprintf("source %s; status=$?; bind -s; printf 'STATUS:%%s BACKEND:%%s READY:%%s FAILURE:%%s\\n' \"$status\" \"$INTENT_SH_ADAPTER_BACKEND\" \"$INTENT_SH_ADAPTER_READY\" \"$INTENT_SH_ADAPTER_FAILURE\"", shellQuote(script))
-	cmd := exec.Command(path, "--noprofile", "--norc", "-ic", command)
-	output, runErr := cmd.CombinedOutput()
-	if runErr != nil {
-		t.Fatalf("run incompatible Bash probe: %v: %s", runErr, output)
-	}
-	text := string(output)
-	if !strings.Contains(text, "Bash 3.2 requires the tested ble.sh loaded first") ||
-		!strings.Contains(text, "STATUS:1 BACKEND:none READY:0 FAILURE:missing_blesh") {
-		t.Fatalf("incompatible Bash did not fail clearly: %q", text)
-	}
-	if strings.Contains(text, `"\C-m":"\C-]\C-^"`) {
-		t.Fatalf("incompatible Bash installed Enter binding: %q", text)
-	}
-}
-
 type runningShell struct {
 	cmd                    *exec.Cmd
 	file                   *os.File
@@ -156,8 +131,8 @@ func startBashWithRCAndTerminalResponses(t *testing.T, tc shellCase, extraEnv ma
 	t.Helper()
 	rcPath := filepath.Join(t.TempDir(), "bashrc")
 	// Modern Linux Bash replaces an inherited PS1 with its default before it
-	// reads an interactive rcfile. Set the marker in the rcfile so ble.sh
-	// captures the same deterministic prompt on every supported Bash version.
+	// reads an interactive rcfile. Set the marker there so every supported
+	// Bash version receives the same deterministic prompt.
 	rc := "PS1=" + shellQuote(promptMarker) + "\nPROMPT=" + shellQuote(promptMarker) + "\n" + bashrc + "\n"
 	if err := os.WriteFile(rcPath, []byte(rc), 0o600); err != nil {
 		t.Fatalf("write Bash test rcfile: %v", err)

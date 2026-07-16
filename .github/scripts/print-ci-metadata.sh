@@ -14,7 +14,6 @@ printf 'locale_charmap=%s\n' "$(locale charmap 2>/dev/null | one_line)"
 printf 'term_fixture=xterm-256color,dumb\n'
 for entry in \
     "bash:${INTENT_SH_TEST_BASH:-bash}" \
-    "bash32:${INTENT_SH_TEST_BASH32:-}" \
     "zsh:zsh" \
     "tmux:${INTENT_SH_TEST_TMUX:-tmux}"
 do
@@ -22,7 +21,7 @@ do
     command_name=${entry#*:}
     if [[ -n $command_name ]] && command -v "$command_name" >/dev/null 2>&1; then
         case $name in
-            bash|bash32) value=$($command_name --version 2>/dev/null | sed -n '1p' | one_line) ;;
+            bash) value=$($command_name --version 2>/dev/null | sed -n '1p' | one_line) ;;
             zsh) value=$($command_name --version 2>/dev/null | one_line) ;;
             tmux) value=$($command_name -V 2>/dev/null | one_line) ;;
         esac
@@ -31,10 +30,6 @@ do
         printf '%s=unavailable\n' "$name"
     fi
 done
-if [[ -n ${INTENT_SH_TEST_BLESH_CACHE-} && -f ${INTENT_SH_TEST_BLESH_CACHE}/fixture/manifest ]]; then
-    sed -n -E '/^(rootCommit|contribCommit|version|scriptSHA256)=/{s/[^A-Za-z0-9=.+-]/?/g;p;}' "${INTENT_SH_TEST_BLESH_CACHE}/fixture/manifest" | head -4
-fi
-
 if [[ -n ${GITHUB_ENV-} && -f ${GITHUB_ENV} && ! -L ${GITHUB_ENV} ]]; then
     bash_path=${INTENT_SH_TEST_BASH:-bash}
     if command -v "$bash_path" >/dev/null 2>&1; then
