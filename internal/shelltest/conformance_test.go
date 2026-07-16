@@ -246,6 +246,7 @@ func TestTERMResizeAndUnicodeFailureConformance(t *testing.T) {
 			for _, termName := range []string{"dumb", "xterm-256color", "screen-256color"} {
 				t.Run(shellCase.name+"/"+localeCase.name+"/"+termName, func(t *testing.T) {
 					requireCompatibleShell(t, shellCase)
+					requireTerminalDescription(t, termName)
 					matrix := newTerminalConformanceCase(t, shellCase, "alt+g", "alt+u", termName, []byte{'\r'}, 28, 96)
 					matrix.locale = localeCase.value
 					shell, _, _ := startTerminalConformanceShell(t, matrix, binDir, config.ProviderCodex, []string{provider.NameCodex})
@@ -275,6 +276,19 @@ func TestTERMResizeAndUnicodeFailureConformance(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func requireTerminalDescription(t *testing.T, name string) {
+	t.Helper()
+	path, err := exec.LookPath("infocmp")
+	if err != nil {
+		qualificationSkipf(t, "infocmp is required to verify terminal fixture %s", name)
+	}
+	command := exec.Command(path, name)
+	command.Env = replaceEnvironment(os.Environ(), map[string]string{"TERM": name})
+	if err := command.Run(); err != nil {
+		qualificationSkipf(t, "terminal fixture %s is not installed", name)
 	}
 }
 

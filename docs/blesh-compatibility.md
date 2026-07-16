@@ -20,7 +20,7 @@ ble.sh root archive SHA-256 db583d869ec5afef0e6bd23bd1af38ec3aa2cc3e6062f8aa4996
 contrib archive URL         https://github.com/akinomyoga/blesh-contrib/archive/0383f1b3e6a9e7332d38cac28f04d204d195affb.tar.gz
 contrib archive SHA-256     537100e1deb783a645e479eed6c8c78f9537e2c1aa7c2ff07fa7a23365f98c2f
 expected BLE_VERSION        0.4.0-nightly+d69e4d5
-fixture installer revision  2
+fixture installer revision  3
 ```
 
 ## Required editor contract
@@ -68,7 +68,7 @@ bash .github/scripts/install-blesh-test.sh
 INTENT_SH_TEST_BLESH=/path/to/pinned/out/ble.sh go test ./internal/shelltest -run Blesh -count=1 -v
 ```
 
-Set `INTENT_SH_TEST_BLESH_ROOT_ARCHIVE` and `INTENT_SH_TEST_BLESH_CONTRIB_ARCHIVE` to the two already downloaded official commit archives to run offline. (`INTENT_SH_TEST_BLESH_ARCHIVE` remains a root-archive compatibility alias.) The installer verifies both pinned checksums before extraction, builds outside the cache destination with GNU awk, and atomically publishes a regular `ble.sh` plus a cache manifest. Every cache restoration rechecks the root and contrib revisions and checksums, installer revision, expected version, license identifiers, and built-script digest; stale, partial, symlinked, or corrupted entries rebuild or fail closed. Ordinary `go test ./...` skips the external ble.sh matrix when `INTENT_SH_TEST_BLESH` is unset.
+Set `INTENT_SH_TEST_BLESH_ROOT_ARCHIVE` and `INTENT_SH_TEST_BLESH_CONTRIB_ARCHIVE` to the two already downloaded official commit archives to run offline. (`INTENT_SH_TEST_BLESH_ARCHIVE` remains a root-archive compatibility alias.) The installer verifies both pinned checksums before extraction, builds outside the cache destination with GNU awk, and atomically publishes the complete generated runtime tree plus a cache manifest. Every cache restoration rechecks the root and contrib revisions and checksums, installer revision, expected version, license identifiers, entrypoint digest, runtime file count, runtime-tree digest, critical runtime files, and regular-file boundaries; stale, partial, symlinked, or corrupted entries rebuild or fail closed. Ordinary `go test ./...` skips the external ble.sh matrix when `INTENT_SH_TEST_BLESH` is unset.
 
 The network-free installer regression suite covers empty, restored, corrupted, stale, symlinked, incomplete, failed-build, wrong-version, and atomic-publication paths with both `sha256sum` and macOS `shasum` command modes:
 

@@ -945,6 +945,9 @@ printf '%s\0' 2 ok 'printf STALE' message fake safe reason stale-request
 	}
 	initPath := filepath.Join(home, "init.bash")
 	initScript := fmt.Sprintf(`source %s
+__intent_test_status=$?
+printf '\nADAPTER_READY|STATUS=%%s|BACKEND=%%s|VERSION=%%s|READY=%%s|FAILURE=%%s|\n' "$__intent_test_status" "$INTENT_SH_ADAPTER_BACKEND" "$INTENT_SH_ADAPTER_EDITOR_VERSION" "$INTENT_SH_ADAPTER_READY" "$INTENT_SH_ADAPTER_FAILURE"
+unset __intent_test_status
 __intent_sh_test_dump() { printf '\nSTATE|BUFFER=%%s|CURSOR=%%s|ORIGINAL=%%s|INDEX=%%s|RISK=%%s|\n' "$READLINE_LINE" "$READLINE_POINT" "$__intent_sh_original_buffer" "$__intent_sh_generation_index" "$__intent_sh_risk"; }
 ble-bind -x M-d __intent_sh_test_dump
 `, shellQuote(filepath.Join(root, "shell", "bash", "intent-sh.bash")))
@@ -961,6 +964,7 @@ ble-bind -x M-d __intent_sh_test_dump
 	time.Sleep(250 * time.Millisecond)
 	shell.write(t, `. "$INTENT_SH_TEST_INIT"`)
 	shell.writeBytes(t, []byte{'\r'})
+	shell.readUntilTimeout(t, "ADAPTER_READY|STATUS=0|BACKEND=blesh|VERSION="+testedBleshVersion+"|READY=1|FAILURE=|", 60*time.Second)
 	shell.readUntilTimeout(t, promptMarker, 30*time.Second)
 	original := "existing-fragment && explain stale input"
 	shell.write(t, original)

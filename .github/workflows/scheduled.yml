@@ -55,7 +55,7 @@ jobs:
         run: |
           if [[ $RUNNER_OS == Linux ]]; then
             sudo apt-get update
-            sudo apt-get install --yes tmux zsh
+            sudo apt-get install --yes ncurses-term tmux zsh
             echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
           else
             brew install bash tmux
@@ -203,7 +203,7 @@ jobs:
       - name: Install PTY shell prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --yes zsh
+          sudo apt-get install --yes ncurses-term zsh
           echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
       - name: Record distribution and libc identity
         run: |
@@ -239,7 +239,7 @@ jobs:
       - name: Install arm64 terminal prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --yes tmux zsh
+          sudo apt-get install --yes ncurses-term tmux zsh
           echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
           echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
       - name: Record native arm64 host and terminal metadata

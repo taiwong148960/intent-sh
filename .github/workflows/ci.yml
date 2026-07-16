@@ -79,9 +79,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install Zsh on Linux
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes zsh
+      - name: Install required unit shells
+        run: |
+          if [[ $RUNNER_OS == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes zsh
+            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          else
+            brew install bash
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
+          fi
       - name: Run strict unit manifest
         run: make test-unit QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain sanitized failure summary
@@ -111,9 +118,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install Zsh on Linux
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes zsh
+      - name: Install required race-test shells
+        run: |
+          if [[ $RUNNER_OS == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes zsh
+            echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
+          else
+            brew install bash
+            echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
+          fi
       - name: Run race qualification
         run: make race-test
 
@@ -139,7 +153,7 @@ jobs:
         run: |
           if [[ $RUNNER_OS == Linux ]]; then
             sudo apt-get update
-            sudo apt-get install --yes zsh
+            sudo apt-get install --yes ncurses-term zsh
             echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
           else
             brew install bash
@@ -186,7 +200,7 @@ jobs:
         run: |
           if [[ $RUNNER_OS == Linux ]]; then
             sudo apt-get update
-            sudo apt-get install --yes tmux zsh
+            sudo apt-get install --yes ncurses-term tmux zsh
             echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
           else
             brew install bash tmux
@@ -324,7 +338,7 @@ jobs:
       - name: Install isolated SSH prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --yes openssh-client openssh-server tmux zsh
+          sudo apt-get install --yes ncurses-term openssh-client openssh-server tmux zsh
           echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
           echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
       - name: Start job-owned loopback SSH daemon
@@ -423,7 +437,7 @@ jobs:
         run: |
           if [[ $RUNNER_OS == Linux ]]; then
             sudo apt-get update
-            sudo apt-get install --yes zsh
+            sudo apt-get install --yes ncurses-term zsh
             echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
           else
             brew install bash
@@ -436,7 +450,11 @@ jobs:
           path: ${{ runner.temp }}/intent-sh-artifacts
       - name: Select only this runner's artifact
         run: |
-          artifact_os=$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
+          case "$RUNNER_OS" in
+            Linux) artifact_os=linux ;;
+            macOS) artifact_os=darwin ;;
+            *) echo "unsupported artifact runner OS: $RUNNER_OS" >&2; exit 1 ;;
+          esac
           artifact_arch=$(go env GOARCH)
           artifact_path="$RUNNER_TEMP/intent-sh-artifacts/intent-sh-$artifact_os-$artifact_arch"
           test -f "$artifact_path" && test ! -L "$artifact_path"
@@ -477,7 +495,7 @@ jobs:
       - name: Install PTY, tmux, and isolated SSH prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install --yes openssh-client openssh-server tmux zsh
+          sudo apt-get install --yes ncurses-term openssh-client openssh-server tmux zsh
           echo "INTENT_SH_TEST_BASH=$(command -v bash)" >> "$GITHUB_ENV"
           echo "INTENT_SH_TEST_TMUX=$(command -v tmux)" >> "$GITHUB_ENV"
       - name: Start job-owned loopback SSH daemon

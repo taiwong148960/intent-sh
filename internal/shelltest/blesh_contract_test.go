@@ -20,15 +20,16 @@ func TestBleshEditCommandContract(t *testing.T) {
 
 	for _, mode := range []string{"emacs", "vi"} {
 		t.Run(mode, func(t *testing.T) {
-			initialize := fmt.Sprintf(`set -o %s; source %s --attach=none; bleopt char_width_mode=west; bleopt char_width_version=15.0; __intent_probe_edit() { printf '\nPROBE_BEFORE|BUFFER=%%s|CURSOR=%%s|\n' "$READLINE_LINE" "$READLINE_POINT"; READLINE_LINE=REPLACED_BUFFER; READLINE_POINT=8; }; __intent_probe_dump() { printf '\nPROBE_AFTER|BUFFER=%%s|CURSOR=%%s|VERSION=%%s|ATTACHED=%%s|\n' "$READLINE_LINE" "$READLINE_POINT" "$BLE_VERSION" "${BLE_ATTACHED-}"; }; ble-bind -x 'M-g' '__intent_probe_edit'; ble-bind -x 'M-d' '__intent_probe_dump'; ble-attach`, mode, shellQuote(blesh))
+			home := t.TempDir()
+			initialize := fmt.Sprintf(`set -o %s; source %s --attach=none --norc --inputrc=none; bleopt char_width_mode=west; bleopt char_width_version=15.0; bleopt highlight_syntax=; bleopt highlight_filename=; bleopt highlight_variable=; bleopt complete_auto_complete=; __intent_probe_edit() { printf '\nPROBE_BEFORE|BUFFER=%%s|CURSOR=%%s|\n' "$READLINE_LINE" "$READLINE_POINT"; READLINE_LINE=REPLACED_BUFFER; READLINE_POINT=8; }; __intent_probe_dump() { printf '\nPROBE_AFTER|BUFFER=%%s|CURSOR=%%s|VERSION=%%s|ATTACHED=%%s|\n' "$READLINE_LINE" "$READLINE_POINT" "$BLE_VERSION" "${BLE_ATTACHED-}"; }; ble-bind -x 'M-g' '__intent_probe_edit'; ble-bind -x 'M-d' '__intent_probe_dump'; ble-attach`, mode, shellQuote(blesh))
 			tc := shellCase{name: "bash", executable: bash, args: []string{"--noprofile", "--norc", "-i"}}
-			shell := startBashWithRCAndTerminalResponses(t, tc, map[string]string{"TERM": "xterm-256color", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}, initialize)
+			shell := startBashWithRCAndTerminalResponses(t, tc, map[string]string{"HOME": home, "TERM": "xterm-256color", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}, initialize)
 			defer shell.close(t)
 			time.Sleep(250 * time.Millisecond)
 			shell.write(t, "printf '\\nPROBE_READY\\n'")
 			shell.writeBytes(t, []byte{'\r'})
-			shell.readUntil(t, "PROBE_READY")
-			shell.readUntil(t, promptMarker)
+			shell.readUntilTimeout(t, "PROBE_READY", 30*time.Second)
+			shell.readUntilTimeout(t, promptMarker, 30*time.Second)
 
 			shell.write(t, "ORIG")
 			shell.writeBytes(t, []byte{'\x1b', 'g'})
@@ -47,9 +48,10 @@ func TestBleshAdapterInitialization(t *testing.T) {
 
 	for _, mode := range []string{"emacs", "vi"} {
 		t.Run(mode, func(t *testing.T) {
-			initialize := fmt.Sprintf(`set -o %s; source %s --attach=none; bleopt char_width_mode=west; bleopt char_width_version=15.0; __intent_probe_init() { source %s; local status=$?; printf '\nADAPTER|STATUS=%%s|PROTOCOL=%%s|BACKEND=%%s|VERSION=%%s|READY=%%s|FAILURE=%%s|\n' "$status" "$INTENT_SH_ADAPTER_PROTOCOL" "$INTENT_SH_ADAPTER_BACKEND" "$INTENT_SH_ADAPTER_EDITOR_VERSION" "$INTENT_SH_ADAPTER_READY" "$INTENT_SH_ADAPTER_FAILURE"; }; ble-attach`, mode, shellQuote(blesh), shellQuote(adapter))
+			home := t.TempDir()
+			initialize := fmt.Sprintf(`set -o %s; source %s --attach=none --norc --inputrc=none; bleopt char_width_mode=west; bleopt char_width_version=15.0; bleopt highlight_syntax=; bleopt highlight_filename=; bleopt highlight_variable=; bleopt complete_auto_complete=; __intent_probe_init() { source %s; local status=$?; printf '\nADAPTER|STATUS=%%s|PROTOCOL=%%s|BACKEND=%%s|VERSION=%%s|READY=%%s|FAILURE=%%s|\n' "$status" "$INTENT_SH_ADAPTER_PROTOCOL" "$INTENT_SH_ADAPTER_BACKEND" "$INTENT_SH_ADAPTER_EDITOR_VERSION" "$INTENT_SH_ADAPTER_READY" "$INTENT_SH_ADAPTER_FAILURE"; }; ble-attach`, mode, shellQuote(blesh), shellQuote(adapter))
 			tc := shellCase{name: "bash", executable: bash, args: []string{"--noprofile", "--norc", "-i"}}
-			shell := startBashWithRCAndTerminalResponses(t, tc, map[string]string{"TERM": "xterm-256color", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}, initialize)
+			shell := startBashWithRCAndTerminalResponses(t, tc, map[string]string{"HOME": home, "TERM": "xterm-256color", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}, initialize)
 			defer shell.close(t)
 			time.Sleep(250 * time.Millisecond)
 
@@ -91,9 +93,10 @@ func TestBleshAcceptAdviceDelegationContract(t *testing.T) {
 	blesh := requireTestBlesh(t)
 	bash := requireBleshMatrixBash(t)
 	marker := filepath.Join(t.TempDir(), "accepted-through-advice")
+	home := t.TempDir()
 	initialize := fmt.Sprintf(`set -o emacs; source %s --attach=none --norc --inputrc=none; bleopt char_width_mode=west; bleopt char_width_version=15.0; bleopt highlight_syntax=; bleopt highlight_filename=; bleopt highlight_variable=; bleopt complete_auto_complete=; ble/function#advice around ble/widget/default/accept-line 'ble/function#advice/do'; ble-attach`, shellQuote(blesh))
 	tc := shellCase{name: "bash", executable: bash, args: []string{"--noprofile", "--norc", "-i"}}
-	shell := startBashWithRCAndTerminalResponses(t, tc, map[string]string{"TERM": "xterm-256color", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}, initialize)
+	shell := startBashWithRCAndTerminalResponses(t, tc, map[string]string{"HOME": home, "TERM": "xterm-256color", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}, initialize)
 	defer shell.close(t)
 	time.Sleep(250 * time.Millisecond)
 	shell.write(t, "printf '\\nBLESH_ADVICE_READY\\n'")
@@ -109,9 +112,10 @@ func TestBleshAcceptAdviceRuntimeDelegationContract(t *testing.T) {
 	blesh := requireTestBlesh(t)
 	bash := requireBleshMatrixBash(t)
 	marker := filepath.Join(t.TempDir(), "accepted-through-runtime-advice")
+	home := t.TempDir()
 	initialize := fmt.Sprintf(`set -o emacs; source %s --attach=none --norc --inputrc=none; bleopt char_width_mode=west; bleopt char_width_version=15.0; bleopt highlight_syntax=; bleopt highlight_filename=; bleopt highlight_variable=; bleopt complete_auto_complete=; __intent_probe_install_advice() { ble/function#advice around ble/widget/default/accept-line 'ble/function#advice/do'; printf '\nRUNTIME_ADVICE_READY\n'; }; ble-bind -x M-i __intent_probe_install_advice; ble-attach`, shellQuote(blesh))
 	tc := shellCase{name: "bash", executable: bash, args: []string{"--noprofile", "--norc", "-i"}}
-	shell := startBashWithRCAndTerminalResponses(t, tc, map[string]string{"TERM": "xterm-256color", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}, initialize)
+	shell := startBashWithRCAndTerminalResponses(t, tc, map[string]string{"HOME": home, "TERM": "xterm-256color", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}, initialize)
 	defer shell.close(t)
 	time.Sleep(250 * time.Millisecond)
 	shell.writeBytes(t, []byte{'\x1b', 'i'})

@@ -47,7 +47,12 @@ contrib_license=$(spec_value BLESH_CONTRIB_LICENSE)
 [[ $expected_version =~ ^[A-Za-z0-9.+-]{1,80}$ ]] || fail "ble.sh expected version is invalid"
 [[ $root_license =~ ^[A-Za-z0-9.+-]{1,40}$ && $contrib_license =~ ^[A-Za-z0-9.+-]{1,40}$ ]] || fail "ble.sh license metadata is invalid"
 
-cache_root=${INTENT_SH_TEST_BLESH_CACHE:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/intent-sh-blesh}
+cache_base=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
+default_cache_root=${cache_base%/}/intent-sh-blesh
+cache_root=${INTENT_SH_TEST_BLESH_CACHE:-$default_cache_root}
+while [[ $cache_root == */ && $cache_root != / ]]; do
+    cache_root=${cache_root%/}
+done
 [[ -n $cache_root && $cache_root != / && $cache_root != *$'\n'* ]] || fail "refusing unsafe ble.sh cache root"
 if [[ -L $cache_root ]]; then
     fail "ble.sh cache root must not be a symlink"
@@ -89,6 +94,21 @@ sha256_file() {
     printf '%s\n' "$output"
 }
 
+runtime_inventory() {
+    local root=$1 inventory=$2 entry relative digest unsafe
+    unsafe=$(find "$root" -mindepth 1 ! -type d ! -type f -print -quit)
+    [[ -z $unsafe ]] || return 1
+    : > "$inventory"
+    while IFS= read -r entry; do
+        relative=${entry#"$root"/}
+        ((${#relative} <= 500)) && [[ $relative =~ ^[A-Za-z0-9_./+@%=-]+$ ]] || return 1
+        is_regular_file "$entry" || return 1
+        digest=$(sha256_file "$entry") || return 1
+        printf '%s  %s\n' "$digest" "$relative" >> "$inventory"
+    done < <(find "$root" -mindepth 1 -type f ! -path "$root/manifest" -print | LC_ALL=C sort)
+    [[ -s $inventory ]]
+}
+
 cache_manifest_value() {
     local key=$1 count
     count=$(grep -c "^${key}=" "$fixture_manifest" || true)
@@ -108,7 +128,7 @@ cache_is_valid() {
     cache_reason=missing-manifest
     is_regular_file "$fixture_manifest" || return 1
     cache_reason=manifest-shape
-    [[ $(awk 'END { print NR }' "$fixture_manifest") == 10 ]] || return 1
+    [[ $(awk 'END { print NR }' "$fixture_manifest") == 12 ]] || return 1
     cache_reason='fixture-schema'
     [[ $(cache_manifest_value fixtureSchema) == "$fixture_schema" ]] || return 1
     cache_reason='installer-revision'
@@ -127,7 +147,8 @@ cache_is_valid() {
     [[ $(cache_manifest_value rootLicense) == "$root_license" ]] || return 1
     cache_reason='contrib-license'
     [[ $(cache_manifest_value contribLicense) == "$contrib_license" ]] || return 1
-    local recorded_digest actual_digest
+    local recorded_digest actual_digest recorded_file_count recorded_runtime_digest
+    local inventory actual_file_count actual_runtime_digest required
     cache_reason='script-digest-record'
     recorded_digest=$(cache_manifest_value scriptSHA256) || return 1
     [[ $recorded_digest =~ ^[0-9a-f]{64}$ ]] || return 1
@@ -136,6 +157,29 @@ cache_is_valid() {
     actual_digest=$(sha256_file "$fixture_script")
     cache_reason='script-digest'
     [[ $actual_digest == "$recorded_digest" ]] || return 1
+    for required in lib/init-bind.sh lib/keymap.emacs.sh lib/keymap.vi.sh; do
+        cache_reason="runtime-$required"
+        is_regular_file "$fixture/$required" || return 1
+    done
+    cache_reason='runtime-file-count-record'
+    recorded_file_count=$(cache_manifest_value runtimeFileCount) || return 1
+    [[ $recorded_file_count =~ ^[1-9][0-9]{0,5}$ ]] || return 1
+    cache_reason='runtime-digest-record'
+    recorded_runtime_digest=$(cache_manifest_value runtimeSHA256) || return 1
+    [[ $recorded_runtime_digest =~ ^[0-9a-f]{64}$ ]] || return 1
+    inventory=$(mktemp "$cache_root/.runtime-inventory.XXXXXX") || return 1
+    if ! runtime_inventory "$fixture" "$inventory"; then
+        rm -f -- "$inventory"
+        cache_reason='runtime-tree'
+        return 1
+    fi
+    actual_file_count=$(awk 'END { print NR }' "$inventory")
+    actual_runtime_digest=$(sha256_file "$inventory")
+    rm -f -- "$inventory"
+    cache_reason='runtime-file-count'
+    [[ $actual_file_count == "$recorded_file_count" ]] || return 1
+    cache_reason='runtime-digest'
+    [[ $actual_runtime_digest == "$recorded_runtime_digest" ]] || return 1
     cache_reason='script-version'
     version_matches "$fixture_script" || return 1
     cache_reason=valid
@@ -222,8 +266,14 @@ built_digest=$(sha256_file "$built_script")
 
 publish=$work/publish
 mkdir -p "$publish"
-cp "$built_script" "$publish/ble.sh"
-chmod 0644 "$publish/ble.sh"
+cp -R -L "$source_root/out/." "$publish/"
+for required in ble.sh lib/init-bind.sh lib/keymap.emacs.sh lib/keymap.vi.sh; do
+    is_regular_file "$publish/$required" || fail "built ble.sh runtime tree is incomplete"
+done
+runtime_inventory_file=$work/runtime.inventory
+runtime_inventory "$publish" "$runtime_inventory_file" || fail "built ble.sh runtime tree contains an unsafe entry"
+runtime_file_count=$(awk 'END { print NR }' "$runtime_inventory_file")
+runtime_digest=$(sha256_file "$runtime_inventory_file")
 cat > "$publish/manifest" <<EOF
 fixtureSchema=$fixture_schema
 installerRevision=$installer_revision
@@ -235,6 +285,8 @@ version=$expected_version
 rootLicense=$root_license
 contribLicense=$contrib_license
 scriptSHA256=$built_digest
+runtimeFileCount=$runtime_file_count
+runtimeSHA256=$runtime_digest
 EOF
 chmod 0600 "$publish/manifest"
 

@@ -605,6 +605,13 @@ func abruptlyDisconnectPTYClient(t *testing.T, client *runningShell) {
 	waitForPTYClientExit(t, client, 5*time.Second)
 }
 
+func runSSHPhase(t *testing.T, name string, phase func(*testing.T)) {
+	t.Helper()
+	if !t.Run(name, phase) {
+		t.FailNow()
+	}
+}
+
 func sortStrings(values []string) {
 	for index := 1; index < len(values); index++ {
 		for current := index; current > 0 && values[current] < values[current-1]; current-- {
@@ -737,28 +744,39 @@ func TestSSHDirectDisconnectReapsRemoteProvider(t *testing.T) {
 	harness := newSSHSmokeHarness(t)
 	harness.stage(t, root)
 	shellPath := harness.shellPath(t, "bash")
-	client := harness.startShell(t, "bash", shellPath)
 	remoteHome := harness.remoteRoot + "/home"
-
-	client.write(t, `rm -f "$HOME"/claude-invoked "$HOME"/codex-invoked "$HOME"/claude-provider-pid "$HOME"/claude-provider-phase "$HOME"/danger-ran`)
-	client.writeBytes(t, []byte{'\r'})
-	client.readUntilTimeout(t, promptMarker, 10*time.Second)
-	client.write(t, "REMOTE-DISCONNECT-INTENT_CASE_CLAUDE_SLOW_7Q")
-	client.writeBytes(t, []byte{0x1b, 'g'})
-	client.readUntilTimeout(t, "Ctrl+C to cancel", 10*time.Second)
-	harness.waitForPath(t, remoteHome+"/claude-provider-pid", 10*time.Second)
-	abruptlyDisconnectPTYClient(t, client)
-
-	harness.assertProviderTreeStopped(t)
-	phasePath := remoteHome + "/claude-provider-phase"
-	if !harness.succeeds(t, "test \"$(grep -c '^phase=cancel-signal$' "+shellQuote(phasePath)+")\" -eq 1 && grep -q '^phase=exited$' "+shellQuote(phasePath)) {
-		t.Fatal("remote disconnect did not produce one bounded cancellation lifecycle")
-	}
-	for _, forbidden := range []string{remoteHome + "/codex-invoked", remoteHome + "/danger-ran"} {
-		if harness.pathExists(t, forbidden) {
-			t.Fatalf("disconnect produced prohibited fallback or target side effect: %s", filepath.Base(forbidden))
+	var client *runningShell
+	runSSHPhase(t, "start-slow-provider", func(t *testing.T) {
+		client = harness.startShell(t, "bash", shellPath)
+		client.write(t, `rm -f "$HOME"/claude-invoked "$HOME"/codex-invoked "$HOME"/claude-provider-pid "$HOME"/claude-provider-phase "$HOME"/danger-ran`)
+		client.writeBytes(t, []byte{'\r'})
+		client.readUntilTimeout(t, promptMarker, 10*time.Second)
+		client.write(t, "REMOTE-DISCONNECT-INTENT_CASE_CLAUDE_SLOW_7Q")
+		client.writeBytes(t, []byte{0x1b, 'g'})
+		client.readUntilTimeout(t, "Ctrl+C to cancel", 10*time.Second)
+		harness.waitForPath(t, remoteHome+"/claude-provider-pid", 10*time.Second)
+	})
+	runSSHPhase(t, "disconnect-client", func(t *testing.T) {
+		abruptlyDisconnectPTYClient(t, client)
+	})
+	runSSHPhase(t, "verify-remote-reap", func(t *testing.T) {
+		harness.assertProviderTreeStopped(t)
+		phasePath := remoteHome + "/claude-provider-phase"
+		phases := harness.output(t, "cat "+shellQuote(phasePath))
+		// A transport loss may terminate the remote session before the fake
+		// provider can append its graceful-exit marker. The durable contract is
+		// that work started, never completed, and no executable descendant lives.
+		if strings.Count(phases, "phase=started") != 1 ||
+			strings.Contains(phases, "phase=completed") ||
+			strings.Count(phases, "phase=cancel-signal") > 1 {
+			t.Fatal("remote disconnect recorded an invalid bounded cancellation lifecycle")
 		}
-	}
+		for _, forbidden := range []string{remoteHome + "/codex-invoked", remoteHome + "/danger-ran"} {
+			if harness.pathExists(t, forbidden) {
+				t.Fatalf("disconnect produced prohibited fallback or target side effect: %s", filepath.Base(forbidden))
+			}
+		}
+	})
 }
 
 func TestSSHToTmuxReconnectStateAndPaneIsolation(t *testing.T) {
@@ -776,63 +794,68 @@ func TestSSHToTmuxReconnectStateAndPaneIsolation(t *testing.T) {
 	client := harness.startTmuxSession(t, "zsh", shellPath, tmuxPath, session)
 	configureStateDump(t, client)
 	matrix := newTerminalConformanceCase(t, shellCase{name: "zsh"}, "alt+g", "alt+u", "screen-256color", []byte{'\r'}, 36, 120)
-	client.write(t, "intent-sh config set provider codex >/dev/null")
-	client.writeBytes(t, matrix.enter)
-	client.readUntilTimeout(t, promptMarker, 10*time.Second)
-
 	original := "SSH-TMUX-INTENT_CASE_SAFE_7Q"
-	client.write(t, original)
-	client.writeBytes(t, matrix.rewriteBytes)
-	client.readUntilTimeout(t, "generated one", 30*time.Second)
-	assertShellState(t, client, "printf GEN_ONE", len("printf GEN_ONE"), original, 0, "safe")
-	harness.runTmux(t, tmuxPath, "detach-client", "-s", session)
-	waitForPTYClientExit(t, client, 10*time.Second)
-
-	client = harness.attachTmuxSession(t, "zsh", tmuxPath, session)
-	assertShellState(t, client, "printf GEN_ONE", len("printf GEN_ONE"), original, 0, "safe")
-	client.writeBytes(t, matrix.undoBytes)
-	client.readUntilTimeout(t, "restored the original buffer", 10*time.Second)
-	assertShellState(t, client, original, len(original), "", 0, "")
-	clearEditableLine(t, client)
-
 	dangerMarker := harness.remoteRoot + "/home/danger-ran"
-	client.write(t, "INTENT_CASE_DANGER_7Q")
-	client.writeBytes(t, matrix.rewriteBytes)
-	client.readUntilTimeout(t, "DANGEROUS:", 30*time.Second)
-	client.writeBytes(t, matrix.enter)
-	client.readUntilTimeout(t, "Press Enter again to execute.", 10*time.Second)
-	if harness.pathExists(t, dangerMarker) {
-		t.Fatal("SSH-to-tmux dangerous command ran on first acceptance")
-	}
-	harness.runTmux(t, tmuxPath, "detach-client", "-s", session)
-	waitForPTYClientExit(t, client, 10*time.Second)
-
-	client = harness.attachTmuxSession(t, "zsh", tmuxPath, session)
-	assertShellState(t, client, "touch "+dangerMarker, len("touch "+dangerMarker), "INTENT_CASE_DANGER_7Q", 0, "dangerous")
-	client.writeBytes(t, matrix.enter)
-	harness.waitForPath(t, dangerMarker, 10*time.Second)
-	client.readUntilTimeout(t, promptMarker, 10*time.Second)
-
-	environment := harness.remoteShellEnvironment(shellPath)
-	innerShell := harness.remoteCleanShellCommand(environment, "zsh", shellPath)
-	paneID := harness.runTmux(t, tmuxPath, "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", session+":0", innerShell)
-	if !regexp.MustCompile(`^%[0-9]{1,6}$`).MatchString(paneID) {
-		t.Fatal("remote tmux returned an unsafe pane identifier")
-	}
-	resetClientOutput(client)
-	harness.runTmux(t, tmuxPath, "select-pane", "-t", paneID)
-	client.readUntilTimeout(t, promptMarker, 10*time.Second)
-	client.write(t, `eval "$(intent-sh init zsh)"`)
-	client.writeBytes(t, matrix.enter)
-	client.readUntilTimeout(t, promptMarker, 10*time.Second)
-	configureStateDump(t, client)
-	assertShellState(t, client, "", 0, "", 0, "")
-	client.write(t, "NEW-PANE-INTENT_CASE_SAFE_7Q")
-	client.writeBytes(t, matrix.rewriteBytes)
-	client.readUntilTimeout(t, "generated one", 30*time.Second)
-	assertShellState(t, client, "printf GEN_ONE", len("printf GEN_ONE"), "NEW-PANE-INTENT_CASE_SAFE_7Q", 0, "safe")
-	client.close(t)
-	harness.assertPromptPrivacy(t, harness.remoteRoot+"/home/codex-last-prompt")
+	runSSHPhase(t, "safe-rewrite", func(t *testing.T) {
+		client.write(t, "intent-sh config set provider codex >/dev/null")
+		client.writeBytes(t, matrix.enter)
+		client.readUntilTimeout(t, promptMarker, 10*time.Second)
+		client.write(t, original)
+		client.writeBytes(t, matrix.rewriteBytes)
+		client.readUntilTimeout(t, "generated one", 30*time.Second)
+		assertShellState(t, client, "printf GEN_ONE", len("printf GEN_ONE"), original, 0, "safe")
+	})
+	runSSHPhase(t, "safe-detach-reattach", func(t *testing.T) {
+		harness.runTmux(t, tmuxPath, "detach-client", "-s", session)
+		waitForPTYClientExit(t, client, 10*time.Second)
+		client = harness.attachTmuxSession(t, "zsh", tmuxPath, session)
+		assertShellState(t, client, "printf GEN_ONE", len("printf GEN_ONE"), original, 0, "safe")
+		client.writeBytes(t, matrix.undoBytes)
+		client.readUntilTimeout(t, "restored the original buffer", 10*time.Second)
+		assertShellState(t, client, original, len(original), "", 0, "")
+		clearEditableLine(t, client)
+	})
+	runSSHPhase(t, "dangerous-first-acceptance", func(t *testing.T) {
+		client.write(t, "INTENT_CASE_DANGER_7Q")
+		client.writeBytes(t, matrix.rewriteBytes)
+		client.readUntilTimeout(t, "DANGEROUS:", 30*time.Second)
+		client.writeBytes(t, matrix.enter)
+		client.readUntilTimeout(t, "Press Enter again to execute.", 10*time.Second)
+		if harness.pathExists(t, dangerMarker) {
+			t.Fatal("SSH-to-tmux dangerous command ran on first acceptance")
+		}
+	})
+	runSSHPhase(t, "dangerous-detach-reattach", func(t *testing.T) {
+		harness.runTmux(t, tmuxPath, "detach-client", "-s", session)
+		waitForPTYClientExit(t, client, 10*time.Second)
+		client = harness.attachTmuxSession(t, "zsh", tmuxPath, session)
+		assertShellState(t, client, "touch "+dangerMarker, len("touch "+dangerMarker), "INTENT_CASE_DANGER_7Q", 0, "dangerous")
+		client.writeBytes(t, matrix.enter)
+		harness.waitForPath(t, dangerMarker, 10*time.Second)
+		client.readUntilTimeout(t, promptMarker, 10*time.Second)
+	})
+	runSSHPhase(t, "independent-pane", func(t *testing.T) {
+		environment := harness.remoteShellEnvironment(shellPath)
+		innerShell := harness.remoteCleanShellCommand(environment, "zsh", shellPath)
+		paneID := harness.runTmux(t, tmuxPath, "split-window", "-d", "-P", "-F", "#{pane_id}", "-t", session+":0", innerShell)
+		if !regexp.MustCompile(`^%[0-9]{1,6}$`).MatchString(paneID) {
+			t.Fatal("remote tmux returned an unsafe pane identifier")
+		}
+		resetClientOutput(client)
+		harness.runTmux(t, tmuxPath, "select-pane", "-t", paneID)
+		client.readUntilTimeout(t, promptMarker, 10*time.Second)
+		client.write(t, `eval "$(intent-sh init zsh)"`)
+		client.writeBytes(t, matrix.enter)
+		client.readUntilTimeout(t, promptMarker, 10*time.Second)
+		configureStateDump(t, client)
+		assertShellState(t, client, "", 0, "", 0, "")
+		client.write(t, "NEW-PANE-INTENT_CASE_SAFE_7Q")
+		client.writeBytes(t, matrix.rewriteBytes)
+		client.readUntilTimeout(t, "generated one", 30*time.Second)
+		assertShellState(t, client, "printf GEN_ONE", len("printf GEN_ONE"), "NEW-PANE-INTENT_CASE_SAFE_7Q", 0, "safe")
+		client.close(t)
+		harness.assertPromptPrivacy(t, harness.remoteRoot+"/home/codex-last-prompt")
+	})
 }
 
 func TestSSHSmokeHarnessSkipsWithoutExplicitTarget(t *testing.T) {

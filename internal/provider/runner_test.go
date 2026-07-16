@@ -77,13 +77,15 @@ func TestProviderHelperProcess(t *testing.T) {
 		time.Sleep(10 * time.Second)
 	case "signal-aware":
 		marker := args[1]
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 		child := exec.Command(os.Args[0], "-test.run=TestProviderHelperProcess", "--", "--intent-sh-provider-helper", "child")
 		if err := child.Start(); err != nil {
 			os.Exit(93)
 		}
+		// The started marker is a readiness contract: cancellation may be sent
+		// immediately after it appears, so install the handlers first.
 		_ = os.WriteFile(marker, []byte(fmt.Sprintf("phase=started\nparent=%d\nchild=%d\n", os.Getpid(), child.Process.Pid)), 0o600)
-		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 		received := <-signals
 		signal.Stop(signals)
 		file, _ := os.OpenFile(marker, os.O_APPEND|os.O_WRONLY, 0)

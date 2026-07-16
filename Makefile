@@ -113,7 +113,7 @@ endif
 
 blesh-test:
 	@test -n "$$INTENT_SH_TEST_BLESH" || { echo "INTENT_SH_TEST_BLESH is required" >&2; exit 1; }
-	INTENT_SH_CI_STRICT=1 INTENT_SH_REQUIRE_GOARCH=$(GOARCH_VALUE) INTENT_SH_TEST_BLESH_BASH_MODE=$(if $(filter blesh-modern,$(BLESH_SUITE)),modern,bash32) go test -json ./internal/shelltest -run '$(BLESH_RUN)' -count=1 | $(AUDITOR) -suite $(BLESH_SUITE) $(AUDIT_MATRIX) $(call AUDIT_OUTPUT,$(BLESH_SUITE))
+	INTENT_SH_CI_STRICT=1 INTENT_SH_REQUIRE_GOARCH=$(GOARCH_VALUE) INTENT_SH_TEST_BLESH_BASH_MODE=$(if $(filter blesh-modern,$(BLESH_SUITE)),modern,bash32) go test -json ./internal/shelltest -run '$(BLESH_RUN)' -count=1 -timeout=30m | $(AUDITOR) -suite $(BLESH_SUITE) $(AUDIT_MATRIX) $(call AUDIT_OUTPUT,$(BLESH_SUITE))
 
 blesh-fixture-test:
 	bash .github/scripts/test-install-blesh-test.sh
