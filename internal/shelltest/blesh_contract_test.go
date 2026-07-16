@@ -16,7 +16,7 @@ const testedBleshVersion = "0.4.0-nightly+d69e4d5"
 // ble.sh; CI and developers provide the verified path explicitly.
 func TestBleshEditCommandContract(t *testing.T) {
 	blesh := requireTestBlesh(t)
-	bash := requireBash32(t)
+	bash := requireBleshMatrixBash(t)
 
 	for _, mode := range []string{"emacs", "vi"} {
 		t.Run(mode, func(t *testing.T) {
@@ -42,7 +42,7 @@ func TestBleshEditCommandContract(t *testing.T) {
 func TestBleshAdapterInitialization(t *testing.T) {
 	root := repositoryRoot(t)
 	blesh := requireTestBlesh(t)
-	bash := requireBash32(t)
+	bash := requireBleshMatrixBash(t)
 	adapter := filepath.Join(root, "shell", "bash", "intent-sh.bash")
 
 	for _, mode := range []string{"emacs", "vi"} {
@@ -66,7 +66,7 @@ func TestBleshAdapterInitialization(t *testing.T) {
 
 func TestBleshOrdinaryAcceptanceContract(t *testing.T) {
 	blesh := requireTestBlesh(t)
-	bash := requireBash32(t)
+	bash := requireBleshMatrixBash(t)
 	marker := filepath.Join(t.TempDir(), "accepted")
 	home := t.TempDir()
 	initialize := fmt.Sprintf(`set -o emacs; source %s --attach=none --norc --inputrc=none; bleopt char_width_mode=west; bleopt char_width_version=15.0; bleopt highlight_syntax=; bleopt highlight_filename=; bleopt highlight_variable=; bleopt complete_auto_complete=; __intent_probe_top_level() { printf '\nBLESH_FUNCTION_RAN\n'; }; ble-attach`, shellQuote(blesh))
@@ -89,7 +89,7 @@ func TestBleshOrdinaryAcceptanceContract(t *testing.T) {
 
 func TestBleshAcceptAdviceDelegationContract(t *testing.T) {
 	blesh := requireTestBlesh(t)
-	bash := requireBash32(t)
+	bash := requireBleshMatrixBash(t)
 	marker := filepath.Join(t.TempDir(), "accepted-through-advice")
 	initialize := fmt.Sprintf(`set -o emacs; source %s --attach=none --norc --inputrc=none; bleopt char_width_mode=west; bleopt char_width_version=15.0; bleopt highlight_syntax=; bleopt highlight_filename=; bleopt highlight_variable=; bleopt complete_auto_complete=; ble/function#advice around ble/widget/default/accept-line 'ble/function#advice/do'; ble-attach`, shellQuote(blesh))
 	tc := shellCase{name: "bash", executable: bash, args: []string{"--noprofile", "--norc", "-i"}}
@@ -107,7 +107,7 @@ func TestBleshAcceptAdviceDelegationContract(t *testing.T) {
 
 func TestBleshAcceptAdviceRuntimeDelegationContract(t *testing.T) {
 	blesh := requireTestBlesh(t)
-	bash := requireBash32(t)
+	bash := requireBleshMatrixBash(t)
 	marker := filepath.Join(t.TempDir(), "accepted-through-runtime-advice")
 	initialize := fmt.Sprintf(`set -o emacs; source %s --attach=none --norc --inputrc=none; bleopt char_width_mode=west; bleopt char_width_version=15.0; bleopt highlight_syntax=; bleopt highlight_filename=; bleopt highlight_variable=; bleopt complete_auto_complete=; __intent_probe_install_advice() { ble/function#advice around ble/widget/default/accept-line 'ble/function#advice/do'; printf '\nRUNTIME_ADVICE_READY\n'; }; ble-bind -x M-i __intent_probe_install_advice; ble-attach`, shellQuote(blesh))
 	tc := shellCase{name: "bash", executable: bash, args: []string{"--noprofile", "--norc", "-i"}}
@@ -124,7 +124,7 @@ func TestBleshAcceptAdviceRuntimeDelegationContract(t *testing.T) {
 
 func TestBleshInitializationRefusesConflictsWithoutPartialBindings(t *testing.T) {
 	blesh := requireTestBlesh(t)
-	bash := requireBash32(t)
+	bash := requireBleshMatrixBash(t)
 	adapter := filepath.Join(repositoryRoot(t), "shell", "bash", "intent-sh.bash")
 
 	tests := []struct {
@@ -394,20 +394,19 @@ func requireTestBlesh(t *testing.T) string {
 	t.Helper()
 	path := os.Getenv("INTENT_SH_TEST_BLESH")
 	if path == "" {
-		t.Skip("set INTENT_SH_TEST_BLESH to the checksum-verified ble.sh script to run the external compatibility matrix")
+		qualificationSkipf(t, "set INTENT_SH_TEST_BLESH to the checksum-verified ble.sh script to run the external compatibility matrix")
 	}
-	info, err := os.Stat(path)
+	if len(path) > 500 || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		t.Fatal("INTENT_SH_TEST_BLESH must be one bounded absolute clean path")
+	}
+	info, err := os.Lstat(path)
 	if err != nil {
-		t.Fatalf("inspect INTENT_SH_TEST_BLESH: %v", err)
+		t.Fatal("inspect INTENT_SH_TEST_BLESH")
 	}
-	if !info.Mode().IsRegular() {
-		t.Fatalf("INTENT_SH_TEST_BLESH %q is not a regular file", path)
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > 16<<20 {
+		t.Fatal("INTENT_SH_TEST_BLESH must be a bounded regular file")
 	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		t.Fatalf("resolve INTENT_SH_TEST_BLESH: %v", err)
-	}
-	return abs
+	return path
 }
 
 func requireBash32(t *testing.T) string {
@@ -432,8 +431,21 @@ func requireBash32(t *testing.T) string {
 			return path
 		}
 	}
-	t.Skip("the ble.sh compatibility matrix requires Bash 3.2; set INTENT_SH_TEST_BASH32 to its path")
+	qualificationSkipf(t, "the ble.sh compatibility matrix requires Bash 3.2; set INTENT_SH_TEST_BASH32 to its path")
 	return ""
+}
+
+func requireBleshMatrixBash(t *testing.T) string {
+	t.Helper()
+	switch os.Getenv("INTENT_SH_TEST_BLESH_BASH_MODE") {
+	case "", "bash32":
+		return requireBash32(t)
+	case "modern":
+		return requireModernBash(t)
+	default:
+		t.Fatal("INTENT_SH_TEST_BLESH_BASH_MODE must be bash32 or modern")
+		return ""
+	}
 }
 
 func requireModernBash(t *testing.T) string {
@@ -450,6 +462,6 @@ func requireModernBash(t *testing.T) string {
 			return path
 		}
 	}
-	t.Skip("modern Bash acceptance coverage requires Bash 4.0+; set INTENT_SH_TEST_BASH to its path")
+	qualificationSkipf(t, "modern Bash acceptance coverage requires Bash 4.0+; set INTENT_SH_TEST_BASH to its path")
 	return ""
 }

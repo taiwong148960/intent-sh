@@ -32,7 +32,7 @@ func newTmuxTestServer(t *testing.T) *tmuxTestServer {
 		var err error
 		path, err = exec.LookPath("tmux")
 		if err != nil {
-			t.Skip("tmux is not installed; install it or set INTENT_SH_TEST_TMUX")
+			qualificationSkipf(t, "tmux is not installed; install it or set INTENT_SH_TEST_TMUX")
 		}
 	}
 	configPath := filepath.Join(t.TempDir(), "empty-tmux.conf")
@@ -127,7 +127,7 @@ func (server *tmuxTestServer) startSession(t *testing.T, matrix terminalConforma
 			tmuxShellCommand(matrix.shell, environment),
 		),
 	}
-	return startShellWithPTYOptions(t, client, clientEnvironment, `eval "$(intent-sh init `+matrix.shell.name+`)"`, terminalPTYOptions{
+	return startShellWithPTYOptions(t, client, clientEnvironment, terminalShellInitialization(matrix), terminalPTYOptions{
 		term: "xterm-256color", rows: matrix.rows, cols: matrix.cols, respondTerminalQueries: true,
 	})
 }
@@ -191,11 +191,18 @@ func tmuxConformanceEnvironment(t *testing.T, matrix terminalConformanceCase, bi
 	if err := config.WriteAt(filepath.Join(xdg, "intent-sh", "config.toml"), cfg); err != nil {
 		t.Fatalf("write tmux conformance config: %v", err)
 	}
-	return map[string]string{
+	environment := map[string]string{
 		"HOME": home, "XDG_CONFIG_HOME": xdg, "SHELL": matrix.shell.executable,
 		"PATH": binDir + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"PS1":  promptMarker, "PROMPT": promptMarker, "TERM": matrix.term,
-	}, home
+		"LANG": matrix.locale, "LC_ALL": matrix.locale,
+	}
+	if coverageDirectory, err := qualificationExecutableCoverageDirectory(); err != nil {
+		t.Fatal(err)
+	} else if coverageDirectory != "" {
+		environment["GOCOVERDIR"] = coverageDirectory
+	}
+	return environment, home
 }
 
 func TestTmuxHarnessUsesPrivateSocketEnvironmentAndCleanInnerShell(t *testing.T) {

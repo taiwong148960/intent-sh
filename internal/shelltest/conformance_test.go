@@ -3,6 +3,7 @@ package shelltest
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,6 +24,8 @@ type terminalConformanceCase struct {
 	enter        []byte
 	rows         uint16
 	cols         uint16
+	editorMode   string
+	locale       string
 }
 
 func newTerminalConformanceCase(t *testing.T, shell shellCase, rewriteValue, undoValue, termName string, enter []byte, rows, cols uint16) terminalConformanceCase {
@@ -39,6 +42,7 @@ func newTerminalConformanceCase(t *testing.T, shell shellCase, rewriteValue, und
 		shell: shell, rewriteValue: rewrite.Canonical(), undoValue: undo.Canonical(),
 		rewriteBytes: rewrite.TerminalSequence().Bytes(), undoBytes: undo.TerminalSequence().Bytes(),
 		term: termName, enter: append([]byte(nil), enter...), rows: rows, cols: cols,
+		editorMode: "emacs", locale: utf8TestLocale(t),
 	}
 }
 
@@ -66,8 +70,9 @@ func startTerminalConformanceShell(t *testing.T, matrix terminalConformanceCase,
 	env := map[string]string{
 		"HOME": home, "XDG_CONFIG_HOME": xdg, "SHELL": matrix.shell.executable,
 		"PATH": binDir + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"LANG": matrix.locale, "LC_ALL": matrix.locale,
 	}
-	shell := startShellWithPTYOptions(t, matrix.shell, env, `eval "$(intent-sh init `+matrix.shell.name+`)"`, terminalPTYOptions{
+	shell := startShellWithPTYOptions(t, matrix.shell, env, terminalShellInitialization(matrix), terminalPTYOptions{
 		term: matrix.term, rows: matrix.rows, cols: matrix.cols, respondTerminalQueries: true,
 	})
 	configureStateDump(t, shell)
@@ -77,24 +82,58 @@ func startTerminalConformanceShell(t *testing.T, matrix terminalConformanceCase,
 func TestNativeTerminalConformanceLifecycleMatrix(t *testing.T) {
 	root := repositoryRoot(t)
 	binDir := buildMVPTools(t, root)
+	utf8Locale := utf8TestLocale(t)
 	for _, shell := range nativeConformanceShells(root) {
 		for _, chordCase := range []struct {
 			name          string
 			rewrite, undo string
 			term          string
+			locale        string
 			enter         []byte
 			rows, cols    uint16
 		}{
-			{name: "default-alt-cr", rewrite: "alt+g", undo: "alt+u", term: "dumb", enter: []byte{'\r'}, rows: 24, cols: 80},
-			{name: "custom-ctrl-lf", rewrite: "ctrl+x", undo: "ctrl+b", term: "xterm-256color", enter: []byte{'\n'}, rows: 40, cols: 132},
+			{name: "default-alt-cr-c-locale", rewrite: "alt+g", undo: "alt+u", term: "dumb", locale: "C", enter: []byte{'\r'}, rows: 24, cols: 80},
+			{name: "custom-ctrl-lf-utf8", rewrite: "ctrl+x", undo: "ctrl+b", term: "xterm-256color", locale: utf8Locale, enter: []byte{'\n'}, rows: 40, cols: 132},
 		} {
-			t.Run(shell.name+"/"+chordCase.name, func(t *testing.T) {
-				requireCompatibleShell(t, shell)
-				matrix := newTerminalConformanceCase(t, shell, chordCase.rewrite, chordCase.undo, chordCase.term, chordCase.enter, chordCase.rows, chordCase.cols)
-				runNativeConformanceLifecycle(t, matrix, binDir)
-			})
+			for _, editorMode := range []string{"emacs", "vi"} {
+				t.Run(shell.name+"/"+editorMode+"/"+chordCase.name, func(t *testing.T) {
+					requireCompatibleShell(t, shell)
+					matrix := newTerminalConformanceCase(t, shell, chordCase.rewrite, chordCase.undo, chordCase.term, chordCase.enter, chordCase.rows, chordCase.cols)
+					matrix.editorMode = editorMode
+					matrix.locale = chordCase.locale
+					runNativeConformanceLifecycle(t, matrix, binDir)
+				})
+			}
 		}
 	}
+}
+
+func terminalShellInitialization(matrix terminalConformanceCase) string {
+	mode := matrix.editorMode
+	if mode == "" {
+		mode = "emacs"
+	}
+	if matrix.shell.name == "bash" {
+		return `set -o ` + mode + `; eval "$(intent-sh init bash)"`
+	}
+	if mode == "vi" {
+		return `bindkey -v; eval "$(intent-sh init zsh)"`
+	}
+	return `bindkey -e; eval "$(intent-sh init zsh)"`
+}
+
+func utf8TestLocale(t *testing.T) string {
+	t.Helper()
+	for _, candidate := range []string{"C.UTF-8", "C.utf8", "en_US.UTF-8", "UTF-8"} {
+		command := exec.Command("locale", "charmap")
+		command.Env = replaceEnvironment(os.Environ(), map[string]string{"LANG": candidate, "LC_ALL": candidate})
+		output, err := command.Output()
+		if err == nil && strings.EqualFold(strings.TrimSpace(string(output)), "UTF-8") {
+			return candidate
+		}
+	}
+	qualificationSkipf(t, "no UTF-8 locale is available for terminal qualification")
+	return ""
 }
 
 func runNativeConformanceLifecycle(t *testing.T, matrix terminalConformanceCase, binDir string) {
@@ -199,35 +238,80 @@ func runConformanceLifecycleOnShell(t *testing.T, shell *runningShell, home stri
 func TestTERMResizeAndUnicodeFailureConformance(t *testing.T) {
 	root := repositoryRoot(t)
 	binDir := buildMVPTools(t, root)
+	utf8Locale := utf8TestLocale(t)
 	for _, shellCase := range nativeConformanceShells(root) {
-		for _, termName := range []string{"dumb", "xterm-256color", "screen-256color"} {
-			t.Run(shellCase.name+"/"+termName, func(t *testing.T) {
-				requireCompatibleShell(t, shellCase)
-				matrix := newTerminalConformanceCase(t, shellCase, "alt+g", "alt+u", termName, []byte{'\r'}, 28, 96)
-				shell, _, _ := startTerminalConformanceShell(t, matrix, binDir, config.ProviderCodex, []string{provider.NameCodex})
-				defer shell.close(t)
+		for _, localeCase := range []struct {
+			name, value string
+		}{{name: "c", value: "C"}, {name: "utf8", value: utf8Locale}} {
+			for _, termName := range []string{"dumb", "xterm-256color", "screen-256color"} {
+				t.Run(shellCase.name+"/"+localeCase.name+"/"+termName, func(t *testing.T) {
+					requireCompatibleShell(t, shellCase)
+					matrix := newTerminalConformanceCase(t, shellCase, "alt+g", "alt+u", termName, []byte{'\r'}, 28, 96)
+					matrix.locale = localeCase.value
+					shell, _, _ := startTerminalConformanceShell(t, matrix, binDir, config.ProviderCodex, []string{provider.NameCodex})
+					defer shell.close(t)
 
-				nativeCursor := installUnicodeCursorWidget(t, shell)
-				original := "前e\u0301後INTENT_CASE_INVALID_7Q"
-				shell.write(t, original)
-				shell.writeBytes(t, []byte{0x1b, 'c'})
-				shell.writeBytes(t, matrix.rewriteBytes)
-				shell.readUntilTimeout(t, "Codex CLI returned an invalid structured result", 30*time.Second)
-				assertShellState(t, shell, original, nativeCursor, "", 0, "")
-				clearEditableLine(t, shell)
+					original := "前e\u0301後INTENT_CASE_INVALID_7Q"
+					nativeCursor := installUnicodeBufferWidget(t, shell, original)
+					shell.writeBytes(t, []byte{0x1b, 'c'})
+					shell.writeBytes(t, matrix.rewriteBytes)
+					shell.readUntilTimeout(t, "Codex CLI returned an invalid structured result", 30*time.Second)
+					assertShellState(t, shell, original, nativeCursor, "", 0, "")
+					clearEditableLine(t, shell)
 
-				resizeOriginal := "INTENT_CASE_RESIZE_7Q"
-				shell.write(t, resizeOriginal)
-				shell.writeBytes(t, matrix.rewriteBytes)
-				shell.readUntilTimeout(t, "Ctrl+C to cancel", 10*time.Second)
-				shell.resize(t, 45, 144)
-				shell.readUntilTimeout(t, "resize result", 30*time.Second)
-				assertShellState(t, shell, "printf RESIZED", len("printf RESIZED"), resizeOriginal, 0, "safe")
-				shell.writeBytes(t, matrix.undoBytes)
-				shell.readUntilTimeout(t, "restored the original buffer", 10*time.Second)
-				assertShellState(t, shell, resizeOriginal, len(resizeOriginal), "", 0, "")
-			})
+					resizeOriginal := "INTENT_CASE_RESIZE_7Q"
+					shell.write(t, resizeOriginal)
+					shell.writeBytes(t, matrix.rewriteBytes)
+					shell.readUntilTimeout(t, "Ctrl+C to cancel", 10*time.Second)
+					shell.resize(t, 45, 144)
+					shell.readUntilTimeout(t, "resize result", 30*time.Second)
+					assertShellState(t, shell, "printf RESIZED", len("printf RESIZED"), resizeOriginal, 0, "safe")
+					shell.writeBytes(t, matrix.rewriteBytes)
+					shell.readUntilTimeout(t, "resize result", 30*time.Second)
+					assertShellState(t, shell, "printf RESIZED", len("printf RESIZED"), resizeOriginal, 1, "safe")
+					shell.writeBytes(t, matrix.undoBytes)
+					shell.readUntilTimeout(t, "restored the original buffer", 10*time.Second)
+					assertShellState(t, shell, resizeOriginal, len(resizeOriginal), "", 0, "")
+				})
+			}
 		}
+	}
+}
+
+func TestPinnedShellCompatibilityLifecycle(t *testing.T) {
+	name := strings.TrimSpace(os.Getenv("INTENT_SH_TEST_COMPAT_NAME"))
+	path := strings.TrimSpace(os.Getenv("INTENT_SH_TEST_COMPAT_PATH"))
+	if name != "bash" && name != "zsh" {
+		qualificationSkipf(t, "INTENT_SH_TEST_COMPAT_NAME must select bash or zsh")
+	}
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		t.Fatal("INTENT_SH_TEST_COMPAT_PATH must be one clean absolute path")
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		t.Fatal("INTENT_SH_TEST_COMPAT_PATH must be a regular executable")
+	}
+	root := repositoryRoot(t)
+	shell := shellCase{name: name, executable: path, script: filepath.Join(root, "shell", name, "intent-sh."+name)}
+	if name == "bash" {
+		shell.args = []string{"--noprofile", "--norc", "-i"}
+	} else {
+		shell.args = []string{"-f", "-i"}
+	}
+	requireCompatibleShell(t, shell)
+	binDir := buildMVPTools(t, root)
+	for _, journey := range []struct {
+		name, mode, rewrite, undo string
+		enter                     []byte
+	}{
+		{name: "emacs-default-cr", mode: "emacs", rewrite: "alt+g", undo: "alt+u", enter: []byte{'\r'}},
+		{name: "vi-custom-lf", mode: "vi", rewrite: "ctrl+x", undo: "ctrl+b", enter: []byte{'\n'}},
+	} {
+		t.Run(journey.name, func(t *testing.T) {
+			matrix := newTerminalConformanceCase(t, shell, journey.rewrite, journey.undo, "xterm-256color", journey.enter, 32, 110)
+			matrix.editorMode = journey.mode
+			runNativeConformanceLifecycle(t, matrix, binDir)
+		})
 	}
 }
 
@@ -302,15 +386,19 @@ func TestBindingMismatchAndConcurrentSessionsKeepBufferStateLocal(t *testing.T) 
 
 func clearEditableLine(t *testing.T, shell *runningShell) {
 	t.Helper()
+	if len(shell.clearSequence) > 0 {
+		shell.writeBytes(t, shell.clearSequence)
+		return
+	}
 	shell.writeBytes(t, []byte{0x01, 0x0b})
 }
 
-func installUnicodeCursorWidget(t *testing.T, shell *runningShell) int {
+func installUnicodeBufferWidget(t *testing.T, shell *runningShell, value string) int {
 	t.Helper()
-	command := `function __intent_sh_test_cursor() { CURSOR=3; }; zle -N intent-sh-test-cursor __intent_sh_test_cursor; bindkey '^[c' intent-sh-test-cursor`
+	command := `function __intent_sh_test_buffer() { BUFFER=` + shellQuote(value) + `; CURSOR=3; }; zle -N intent-sh-test-buffer __intent_sh_test_buffer; bindkey '^[c' intent-sh-test-buffer`
 	cursor := 3
 	if shell.name == "bash" {
-		command = `__intent_sh_test_cursor(){ READLINE_POINT=6; }; bind -x '"\ec":__intent_sh_test_cursor'`
+		command = `__intent_sh_test_buffer(){ READLINE_LINE=` + shellQuote(value) + `; READLINE_POINT=6; }; bind -x '"\ec":__intent_sh_test_buffer'`
 		cursor = 6
 	}
 	shell.write(t, command)

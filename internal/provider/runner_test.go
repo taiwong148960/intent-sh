@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -74,6 +75,28 @@ func TestProviderHelperProcess(t *testing.T) {
 		}
 		_, _ = fmt.Fprintf(os.Stdout, "%d\n", child.Process.Pid)
 		time.Sleep(10 * time.Second)
+	case "signal-aware":
+		marker := args[1]
+		child := exec.Command(os.Args[0], "-test.run=TestProviderHelperProcess", "--", "--intent-sh-provider-helper", "child")
+		if err := child.Start(); err != nil {
+			os.Exit(93)
+		}
+		_ = os.WriteFile(marker, []byte(fmt.Sprintf("phase=started\nparent=%d\nchild=%d\n", os.Getpid(), child.Process.Pid)), 0o600)
+		signals := make(chan os.Signal, 1)
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+		received := <-signals
+		signal.Stop(signals)
+		file, _ := os.OpenFile(marker, os.O_APPEND|os.O_WRONLY, 0)
+		if file != nil {
+			_, _ = fmt.Fprintf(file, "signal=%s\n", received)
+			_ = file.Close()
+		}
+		_ = child.Wait()
+		file, _ = os.OpenFile(marker, os.O_APPEND|os.O_WRONLY, 0)
+		if file != nil {
+			_, _ = fmt.Fprintln(file, "phase=exited")
+			_ = file.Close()
+		}
 	case "child":
 		time.Sleep(10 * time.Second)
 	default:
@@ -192,6 +215,90 @@ func TestProcessRunnerTimeoutAndCancellation(t *testing.T) {
 		}
 		assertRemoved(t, result.WorkDir)
 	})
+}
+
+func TestProcessRunnerGracefullySignalsThenReapsProviderTree(t *testing.T) {
+	tests := []struct {
+		name       string
+		cancel     bool
+		wantSignal string
+	}{
+		{name: "cancellation", cancel: true, wantSignal: "interrupt"},
+		{name: "timeout", wantSignal: "terminated"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "provider-phases")
+			runner := ProcessRunner{TempRoot: t.TempDir()}
+			invocation := helperInvocation("signal-aware", marker)
+			invocation.Timeout = 250 * time.Millisecond
+			ctx := context.Background()
+			var cancel context.CancelFunc
+			if test.cancel {
+				ctx, cancel = context.WithCancel(ctx)
+				invocation.Timeout = 5 * time.Second
+			}
+			resultChannel := make(chan error, 1)
+			go func() {
+				_, err := runner.Run(ctx, invocation)
+				resultChannel <- err
+			}()
+			waitForProviderMarker(t, marker, "phase=started")
+			if cancel != nil {
+				cancel()
+			}
+			err := <-resultChannel
+			wantKind := apperr.KindTimeout
+			if test.cancel {
+				wantKind = apperr.KindCancelled
+			}
+			if apperr.KindOf(err) != wantKind {
+				t.Fatalf("kind = %q, want %q; err=%v", apperr.KindOf(err), wantKind, err)
+			}
+			phases, readErr := os.ReadFile(marker)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			for _, want := range []string{"phase=started", "signal=" + test.wantSignal, "phase=exited"} {
+				if !strings.Contains(string(phases), want) {
+					t.Fatalf("provider phases omitted %q: %s", want, phases)
+				}
+			}
+			assertRecordedPIDsExited(t, string(phases))
+		})
+	}
+}
+
+func waitForProviderMarker(t *testing.T, path, value string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		data, _ := os.ReadFile(path)
+		if strings.Contains(string(data), value) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("provider marker did not reach %s", value)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func assertRecordedPIDsExited(t *testing.T, phases string) {
+	t.Helper()
+	for _, line := range strings.Split(phases, "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || (key != "parent" && key != "child") {
+			continue
+		}
+		pid, err := strconv.Atoi(value)
+		if err != nil {
+			t.Fatalf("invalid recorded pid: %q", line)
+		}
+		if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+			t.Fatalf("recorded %s process %d survived teardown: %v", key, pid, err)
+		}
+	}
 }
 
 func TestProcessRunnerBoundsOutput(t *testing.T) {

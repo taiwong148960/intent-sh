@@ -166,10 +166,24 @@ func TestNativeSetupCustomProbeResetDowngradeAndRemovalJourney(t *testing.T) {
 func runQualificationCommand(t *testing.T, binary string, environment map[string]string, args ...string) string {
 	t.Helper()
 	command := exec.Command(binary, args...)
+	if coverageDirectory, err := qualificationExecutableCoverageDirectory(); err != nil {
+		t.Fatal(err)
+	} else if coverageDirectory != "" {
+		environment = cloneEnvironmentMap(environment)
+		environment["GOCOVERDIR"] = coverageDirectory
+	}
 	command.Env = replaceEnvironment(os.Environ(), environment)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("run qualification command %s: %v: %s", strings.Join(args, " "), err, output)
 	}
 	return string(output)
+}
+
+func cloneEnvironmentMap(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source)+1)
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }

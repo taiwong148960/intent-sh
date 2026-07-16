@@ -142,10 +142,30 @@ func (r ProcessRunner) Run(ctx context.Context, invocation Invocation) (result R
 	var waitErr error
 	select {
 	case waitErr = <-waitCh:
-		killProcessGroup(cmd.Process.Pid)
+		killProcessGroup(cmd.Process.Pid, syscall.SIGKILL)
 	case <-runCtx.Done():
-		killProcessGroup(cmd.Process.Pid)
-		waitErr = <-waitCh
+		terminationSignal := syscall.SIGINT
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			terminationSignal = syscall.SIGTERM
+		}
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGCONT)
+		killProcessGroup(cmd.Process.Pid, terminationSignal)
+		grace := time.NewTimer(750 * time.Millisecond)
+		select {
+		case waitErr = <-waitCh:
+			if !grace.Stop() {
+				select {
+				case <-grace.C:
+				default:
+				}
+			}
+		case <-grace.C:
+			killProcessGroup(cmd.Process.Pid, syscall.SIGKILL)
+			waitErr = <-waitCh
+		}
+		// A provider leader can exit while leaving a descendant in its process
+		// group. The final bounded sweep makes that impossible on every path.
+		killProcessGroup(cmd.Process.Pid, syscall.SIGKILL)
 		result = collectRunResult(result, stdout, stderr)
 		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			return result, apperr.Wrap(apperr.KindTimeout, "run provider", "provider timed out", runCtx.Err())
@@ -254,11 +274,11 @@ func readBoundedFile(path string, limit int) ([]byte, error) {
 	return data, nil
 }
 
-func killProcessGroup(pid int) {
+func killProcessGroup(pid int, signal syscall.Signal) {
 	if pid <= 0 {
 		return
 	}
-	_ = syscall.Kill(-pid, syscall.SIGKILL)
+	_ = syscall.Kill(-pid, signal)
 }
 
 func limitOrDefault(value, fallback int) int {

@@ -1,0 +1,10 @@
+{
+  "name": "intent-sh-scheduled-provider-probes",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Exact official CLI versions used only for unauthenticated scheduled capability probes.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.210",
+    "@openai/codex": "0.144.4"
+  }
+}

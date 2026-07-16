@@ -99,10 +99,10 @@ func TestEditingDisarmsDangerousFingerprint(t *testing.T) {
 func TestBash32WithoutBleshFailsBeforeBinding(t *testing.T) {
 	path, err := exec.LookPath("/bin/bash")
 	if err != nil {
-		t.Skip("system Bash is not available")
+		qualificationSkipf(t, "system Bash is not available")
 	}
 	if major := bashMajor(t, path); major >= 4 {
-		t.Skipf("system Bash is %d, not an incompatible version", major)
+		qualificationSkipf(t, "system Bash is %d, not an incompatible version", major)
 	}
 	script := filepath.Join(repositoryRoot(t), "shell", "bash", "intent-sh.bash")
 	command := fmt.Sprintf("source %s; status=$?; bind -s; printf 'STATUS:%%s BACKEND:%%s READY:%%s FAILURE:%%s\\n' \"$status\" \"$INTENT_SH_ADAPTER_BACKEND\" \"$INTENT_SH_ADAPTER_READY\" \"$INTENT_SH_ADAPTER_FAILURE\"", shellQuote(script))
@@ -129,6 +129,7 @@ type runningShell struct {
 	pending                string
 	name                   string
 	respondTerminalQueries bool
+	clearSequence          []byte
 }
 
 type terminalPTYOptions struct {
@@ -168,7 +169,7 @@ func startShellWithPTYOptions(t *testing.T, tc shellCase, extraEnv map[string]st
 	t.Helper()
 	path, err := exec.LookPath(tc.executable)
 	if err != nil {
-		t.Skipf("%s is not installed", tc.executable)
+		qualificationSkipf(t, "%s is not installed", tc.executable)
 	}
 	cmd := exec.Command(path, tc.args...)
 	if options.term == "" {
@@ -181,6 +182,11 @@ func startShellWithPTYOptions(t *testing.T, tc shellCase, extraEnv map[string]st
 		options.cols = 240
 	}
 	environment := map[string]string{"PS1": promptMarker, "PROMPT": promptMarker, "TERM": options.term}
+	if coverageDirectory, err := qualificationExecutableCoverageDirectory(); err != nil {
+		t.Fatal(err)
+	} else if coverageDirectory != "" {
+		environment["GOCOVERDIR"] = coverageDirectory
+	}
 	for key, value := range extraEnv {
 		environment[key] = value
 	}
@@ -360,10 +366,10 @@ func requireCompatibleShell(t *testing.T, tc shellCase) {
 	if tc.name == "bash" {
 		path, err := exec.LookPath(tc.executable)
 		if err != nil {
-			t.Skipf("%s is not installed", tc.executable)
+			qualificationSkipf(t, "%s is not installed", tc.executable)
 		}
 		if major := bashMajor(t, path); major < 4 {
-			t.Skipf("Bash %d is intentionally incompatible; set INTENT_SH_TEST_BASH to Bash 4.0+", major)
+			qualificationSkipf(t, "Bash %d is intentionally incompatible; set INTENT_SH_TEST_BASH to Bash 4.0+", major)
 		}
 	}
 }

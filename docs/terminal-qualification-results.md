@@ -35,6 +35,8 @@ Candidate for every row: working tree based on commit `c0bdae8`.
 
 Automated pseudo-terminal evidence proves adapter invariants after a byte path exists; it does not identify or qualify a terminal application.
 
+The expanded required/scheduled harness added after this record includes strict macOS/Linux native and tmux manifests, editor/locale/TERM/resize matrices, loopback SSH disconnect and SSH-to-tmux journeys, downloaded native artifacts, and executable coverage. Those jobs are automated evidence only after their hosted run succeeds; they do not alter any 2026-07-14 named-environment status, and no success is inferred from workflow configuration alone.
+
 ## Recorded named-environment results
 
 ### VS Code integrated terminal
