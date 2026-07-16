@@ -1,0 +1,49 @@
+internal/app/service.go
+  s_305a6fcc784f10::t_505e50fcde9c78 188,192-193,195-201
+internal/app/service_test.go
+  s_305a6fcc784f10::t_7b904191d8b20e 109,223-256
+internal/cli/cli.go
+  s_305a6fcc784f10::t_10486ae4095f63 204-207
+internal/cli/cli_test.go
+  s_305a6fcc784f10::t_4c3656972a4f8c 335,345-347
+internal/doctor/doctor.go
+  s_305a6fcc784f10::t_45ca882a290720 196,206,294,304,307-308,315,335,349-350,352,384,391,395,420,423-424,427,443,448,453,726
+internal/doctor/doctor_test.go
+  s_305a6fcc784f10::t_2e2e209f68b106 199,206-207,212,215-217,219,226,230,233-234,242,249,258,260-261,264-267,270-273,280,296,324-325
+internal/protocol/adapter_test.go
+  s_305a6fcc784f10::t_61d5ff88c02498 79-80,86
+internal/setup/setup.go
+  s_305a6fcc784f10::t_2b9402bbc9d48f 36-42,171,192,200
+openspec/changes/archive/2026-07-16-drop-bash-pre-4-support/.openspec.yaml
+  s_305a6fcc784f10::t_12827120f5aa9f 1-2
+openspec/changes/archive/2026-07-16-drop-bash-pre-4-support/design.md
+  s_305a6fcc784f10::t_562651252c298e 1-76
+openspec/changes/archive/2026-07-16-drop-bash-pre-4-support/proposal.md
+  s_305a6fcc784f10::t_ee677a2e1dd78c 1-28
+openspec/changes/archive/2026-07-16-drop-bash-pre-4-support/specs/continuous-integration-qualification/spec.md
+  s_305a6fcc784f10::t_c918ed90146d9b 1-19
+openspec/changes/archive/2026-07-16-drop-bash-pre-4-support/specs/installation-diagnostics/spec.md
+  s_305a6fcc784f10::t_895c704b0ae05a 1-113
+openspec/changes/archive/2026-07-16-drop-bash-pre-4-support/specs/shell-rewrite-workflow/spec.md
+  s_305a6fcc784f10::t_0b7305053d8153 1-50
+shell/bash/intent-sh.bash
+  s_305a6fcc784f10::t_c4f0409f53784b 132,140-147,152,157-158,162,260-262,279-280,332-334,338-341,506,508,512-513
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "834f8b6fe0bc21d9216f90a23dc41cc05b95f420",
+  "prompts": {},
+  "sessions": {
+    "s_305a6fcc784f10": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6aa4-803e-71d3-a298-f538ab5d0df4",
+        "model": "unknown"
+      },
+      "human_author": "wangtai.10 <wangtai.10@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
