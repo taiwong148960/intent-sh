@@ -157,7 +157,7 @@ jobs:
             echo "PKG_CONFIG_PATH=$ncurses_prefix/lib/pkgconfig"
           } >> "$GITHUB_ENV"
       - name: Restore only this pinned source-build cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/intent-sh-shell-${{ matrix.fixture }}
           key: shell-${{ matrix.fixture }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/ci/shell-compat-fixtures.env', '.github/scripts/install-shell-compat.sh') }}
