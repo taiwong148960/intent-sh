@@ -93,7 +93,7 @@ jobs:
         run: make test-unit QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain sanitized failure summary
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unit-${{ runner.os }}-summary
           path: ${{ runner.temp }}/qualification
@@ -171,7 +171,7 @@ jobs:
         run: go test ./internal/shelltest -run '^TestBashCancellationAndTeardownQualification/(terminal-byte|process-signal)$' -count=10
       - name: Retain sanitized failure summary
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-pty-${{ runner.os }}-summary
           path: ${{ runner.temp }}/qualification
@@ -213,7 +213,7 @@ jobs:
         run: make tmux-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain sanitized failure summary
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tmux-${{ runner.os }}-summary
           path: ${{ runner.temp }}/qualification
@@ -240,7 +240,7 @@ jobs:
         run: make bash32-negative-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain sanitized failure summary
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bash32-negative-summary
           path: ${{ runner.temp }}/qualification
@@ -314,7 +314,7 @@ jobs:
         run: make blesh-test BLESH_SUITE=${{ matrix.suite }} QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain sanitized failure summary
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: blesh-${{ matrix.suite }}-${{ runner.os }}-summary
           path: ${{ runner.temp }}/qualification
@@ -352,7 +352,7 @@ jobs:
         run: bash .github/scripts/setup-loopback-ssh.sh stop
       - name: Retain sanitized failure summary
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: loopback-ssh-summary
           path: ${{ runner.temp }}/qualification
@@ -378,7 +378,7 @@ jobs:
           ARTIFACT_DIR: ${{ runner.temp }}/intent-sh-artifacts
         run: make artifact-build artifact-inspect
       - name: Distribute only the workflow-internal qualification artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: intent-sh-qualified-artifacts
           path: ${{ runner.temp }}/intent-sh-artifacts
@@ -402,7 +402,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Download distributed qualification artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: intent-sh-qualified-artifacts
           path: ${{ runner.temp }}/intent-sh-artifacts
@@ -444,7 +444,7 @@ jobs:
             echo "INTENT_SH_TEST_BASH=$(brew --prefix bash)/bin/bash" >> "$GITHUB_ENV"
           fi
       - name: Download distributed qualification artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: intent-sh-qualified-artifacts
           path: ${{ runner.temp }}/intent-sh-artifacts
@@ -471,7 +471,7 @@ jobs:
         run: make artifact-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain sanitized failure summary
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: artifact-native-${{ runner.os }}-summary
           path: ${{ runner.temp }}/qualification
@@ -511,7 +511,7 @@ jobs:
         run: bash .github/scripts/setup-loopback-ssh.sh stop
       - name: Retain only sanitized coverage and manifest failure summaries
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: executable-coverage-summary
           path: |

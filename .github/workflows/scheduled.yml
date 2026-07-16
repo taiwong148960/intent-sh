@@ -76,7 +76,7 @@ jobs:
             QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain exact sanitized seed and failure phase
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scheduled-stress-${{ runner.os }}-summary
           path: ${{ runner.temp }}/qualification
@@ -132,7 +132,7 @@ jobs:
           done < <(find "$GITHUB_WORKSPACE/internal" -path '*/testdata/fuzz/*' -type f -newer "$RUNNER_TEMP/fuzz-started" -print0)
       - name: Retain only privacy-safe fuzz policy and digest metadata
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz-policy-summary
           path: ${{ runner.temp }}/fuzz-summary
@@ -175,7 +175,7 @@ jobs:
         run: make shell-compatibility-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain pinned fixture and failure phase metadata
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: shell-${{ matrix.fixture }}-summary
           path: ${{ runner.temp }}/qualification
@@ -215,7 +215,7 @@ jobs:
         run: make native-pty-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain sanitized distribution failure evidence
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: distribution-${{ matrix.os }}-summary
           path: ${{ runner.temp }}/qualification
@@ -251,7 +251,7 @@ jobs:
           make tmux-test QUALIFICATION_DIR="$RUNNER_TEMP/qualification"
       - name: Retain sanitized native arm64 failure evidence
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: native-linux-arm64-summary
           path: ${{ runner.temp }}/qualification
@@ -293,7 +293,7 @@ jobs:
             | tee "$RUNNER_TEMP/provider-capability-summary.json"
       - name: Retain only provider name, version, stage, and pass/fail
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: provider-capability-summary
           path: ${{ runner.temp }}/provider-capability-summary.json
@@ -328,7 +328,7 @@ jobs:
             | tee "$RUNNER_TEMP/govuln-summary.json"
       - name: Retain only bounded scanner, database, and identifier metadata
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: govuln-summary
           path: ${{ runner.temp }}/govuln-summary.json
