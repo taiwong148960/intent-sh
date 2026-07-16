@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -534,6 +535,7 @@ func (harness *sshSmokeHarness) startPTYCommand(t *testing.T, name, remoteComman
 	clientCase := shellCase{name: name, executable: harness.path, args: args}
 	client := startShellWithPTYOptions(t, clientCase, nil, initialize, terminalPTYOptions{
 		term: "xterm-256color", rows: 36, cols: 120, respondTerminalQueries: true,
+		startupTimeout: 20 * time.Second,
 	})
 	return client
 }
@@ -558,7 +560,10 @@ func (harness *sshSmokeHarness) tmuxCommand(t *testing.T, tmuxPath string, argum
 	}
 	parts := []string{shellQuote(tmuxPath), "-S", shellQuote(socketPath), "-f", shellQuote(configPath)}
 	for _, argument := range arguments {
-		if len(argument) == 0 || len(argument) > 512 || strings.ContainsAny(argument, "\x00\r\n") {
+		// A clean-shell command contains the complete allowlisted environment
+		// and legitimately exceeds a short tmux token. Keep the overall token
+		// bounded while still quoting every argument as one shell word.
+		if len(argument) == 0 || len(argument) > 4096 || strings.ContainsAny(argument, "\x00\r\n") {
 			t.Fatal("remote tmux command contained an unsafe argument")
 		}
 		parts = append(parts, shellQuote(argument))
@@ -575,8 +580,12 @@ func (harness *sshSmokeHarness) startTmuxSession(t *testing.T, name, shellPath, 
 	t.Helper()
 	environment := harness.remoteShellEnvironment(shellPath)
 	innerShell := harness.remoteCleanShellCommand(environment, name, shellPath)
+	// Create the private server and pane through a bounded non-PTY command,
+	// then attach through SSH. This separates server startup errors from the
+	// client transport and avoids attached-new-session races on tmux 3.4.
+	harness.runTmux(t, tmuxPath, "new-session", "-d", "-s", session, "-x", "120", "-y", "36", innerShell)
 	remoteCommand := "cd " + shellQuote(harness.remoteRoot) + " && exec " + harness.tmuxCommand(t, tmuxPath,
-		"new-session", "-s", session, "-x", "120", "-y", "36", innerShell)
+		"attach-session", "-t", session)
 	return harness.startPTYCommand(t, name, remoteCommand, `eval "$(intent-sh init `+name+`)"`)
 }
 
@@ -602,6 +611,10 @@ func waitForPTYClientExit(t *testing.T, client *runningShell, timeout time.Durat
 func abruptlyDisconnectPTYClient(t *testing.T, client *runningShell) {
 	t.Helper()
 	_ = client.file.Close()
+	// Closing a local PTY does not make every OpenSSH client release its
+	// transport immediately. Deliver the terminal hangup explicitly so the
+	// remote shell observes the disconnect before a provider can fall back.
+	_ = client.cmd.Process.Signal(syscall.SIGHUP)
 	waitForPTYClientExit(t, client, 5*time.Second)
 }
 
@@ -791,8 +804,13 @@ func TestSSHToTmuxReconnectStateAndPaneIsolation(t *testing.T) {
 		_ = harness.command(false, cleanupCommand).Run()
 	})
 
-	client := harness.startTmuxSession(t, "zsh", shellPath, tmuxPath, session)
-	configureStateDump(t, client)
+	var client *runningShell
+	runSSHPhase(t, "start-tmux-session", func(t *testing.T) {
+		client = harness.startTmuxSession(t, "zsh", shellPath, tmuxPath, session)
+	})
+	runSSHPhase(t, "configure-state-widget", func(t *testing.T) {
+		configureStateDump(t, client)
+	})
 	matrix := newTerminalConformanceCase(t, shellCase{name: "zsh"}, "alt+g", "alt+u", "screen-256color", []byte{'\r'}, 36, 120)
 	original := "SSH-TMUX-INTENT_CASE_SAFE_7Q"
 	dangerMarker := harness.remoteRoot + "/home/danger-ran"

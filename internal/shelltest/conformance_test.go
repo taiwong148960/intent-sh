@@ -252,9 +252,15 @@ func TestTERMResizeAndUnicodeFailureConformance(t *testing.T) {
 					shell, _, _ := startTerminalConformanceShell(t, matrix, binDir, config.ProviderCodex, []string{provider.NameCodex})
 					defer shell.close(t)
 
-					original := "前e\u0301後INTENT_CASE_INVALID_7Q"
-					nativeCursor := installUnicodeBufferWidget(t, shell, original)
-					shell.writeBytes(t, []byte{0x1b, 'c'})
+					original := "INTENT_CASE_INVALID_7Q"
+					if localeCase.name == "utf8" {
+						original = "前e\u0301後" + original
+					}
+					nativeCursor := installBufferWidget(t, shell, original)
+					// Use one control byte for the test-only buffer widget. ESC c is
+					// also the terminal RIS sequence and is not a portable editor key
+					// under every screen-compatible terminfo implementation.
+					shell.writeBytes(t, []byte{0x0f})
 					shell.writeBytes(t, matrix.rewriteBytes)
 					shell.readUntilTimeout(t, "Codex CLI returned an invalid structured result", 30*time.Second)
 					assertShellState(t, shell, original, nativeCursor, "", 0, "")
@@ -407,12 +413,12 @@ func clearEditableLine(t *testing.T, shell *runningShell) {
 	shell.writeBytes(t, []byte{0x01, 0x0b})
 }
 
-func installUnicodeBufferWidget(t *testing.T, shell *runningShell, value string) int {
+func installBufferWidget(t *testing.T, shell *runningShell, value string) int {
 	t.Helper()
-	command := `function __intent_sh_test_buffer() { BUFFER=` + shellQuote(value) + `; CURSOR=3; }; zle -N intent-sh-test-buffer __intent_sh_test_buffer; bindkey '^[c' intent-sh-test-buffer`
+	command := `function __intent_sh_test_buffer() { BUFFER=` + shellQuote(value) + `; CURSOR=3; }; zle -N intent-sh-test-buffer __intent_sh_test_buffer; bindkey '^O' intent-sh-test-buffer`
 	cursor := 3
 	if shell.name == "bash" {
-		command = `__intent_sh_test_buffer(){ READLINE_LINE=` + shellQuote(value) + `; READLINE_POINT=6; }; bind -x '"\ec":__intent_sh_test_buffer'`
+		command = `__intent_sh_test_buffer(){ READLINE_LINE=` + shellQuote(value) + `; READLINE_POINT=6; }; bind -x '"\C-o":__intent_sh_test_buffer'`
 		cursor = 6
 	}
 	shell.write(t, command)

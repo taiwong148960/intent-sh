@@ -356,7 +356,9 @@ func TestTmuxInterceptedRootBindingFailsKeyDeliveryDiagnostic(t *testing.T) {
 	client := server.startSession(t, matrix, environment, "intercepted")
 	defer client.close(t)
 
-	server.run(t, "bind-key", "-n", "M-g", "send-keys", "-l", "X")
+	// Address the root table explicitly and inject one exact byte. This avoids
+	// tmux-version differences in -n alias and literal argument parsing.
+	server.run(t, "bind-key", "-T", "root", "M-g", "send-keys", "-H", "58")
 	client.write(t, "intent-sh doctor --keys")
 	client.writeBytes(t, matrix.enter)
 	client.readUntilTimeout(t, "press Alt+G now", 20*time.Second)
@@ -368,10 +370,17 @@ func TestTmuxInterceptedRootBindingFailsKeyDeliveryDiagnostic(t *testing.T) {
 	client.readUntilTimeout(t, "press Ctrl+C now", 10*time.Second)
 	client.writeBytes(t, []byte{0x03})
 	output := client.readUntilTimeout(t, "NOT_READY resolve the failed checks above", 20*time.Second)
-	for _, want := range []string{"FAIL terminal.keys.rewrite", "intercepted or transformed", "0x58", "intent-sh config set rewrite_key"} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("intercepted tmux diagnostic omitted %q: %q", want, output)
-		}
+	for _, check := range []struct{ name, want string }{
+		{name: "failed-check", want: "FAIL terminal.keys.rewrite"},
+		{name: "interception-reason", want: "intercepted or transformed"},
+		{name: "received-byte", want: "0x58"},
+		{name: "remediation", want: "intent-sh config set rewrite_key"},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			if !strings.Contains(output, check.want) {
+				t.Fatalf("intercepted tmux diagnostic omitted %q", check.want)
+			}
+		})
 	}
 	if _, err := os.Stat(filepath.Join(home, "codex-invoked")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("key-delivery diagnostic invoked a provider: %v", err)

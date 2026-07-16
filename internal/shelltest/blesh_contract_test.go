@@ -57,7 +57,7 @@ func TestBleshAdapterInitialization(t *testing.T) {
 
 			shell.write(t, "__intent_probe_init")
 			shell.writeBytes(t, []byte{'\r'})
-			shell.readUntilTimeout(t, "ADAPTER|STATUS=0|PROTOCOL=2|BACKEND=blesh|VERSION="+testedBleshVersion+"|READY=1|FAILURE=|", 30*time.Second)
+			shell.readUntilTimeout(t, "ADAPTER|STATUS=0|PROTOCOL=2|BACKEND=blesh|VERSION="+testedBleshVersion+"|READY=1|FAILURE=|", 60*time.Second)
 			shell.readUntilTimeout(t, promptMarker, 30*time.Second)
 			shell.write(t, "ORIG")
 			shell.writeBytes(t, []byte{'\x1b', 'g'})

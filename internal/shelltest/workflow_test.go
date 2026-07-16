@@ -97,7 +97,10 @@ case "$prompt" in
 		sleep 10 &
 		intent_fake_child=$!
 		printf '%s %s\n' "$$" "$intent_fake_child" > "$HOME/codex-provider-pid"
-		wait "$intent_fake_child"
+		if ! wait "$intent_fake_child"; then
+			printf 'phase=child-interrupted\n' >> "$HOME/codex-provider-phase"
+			exit 130
+		fi
 		trap - INT TERM
 		printf 'phase=completed\n' >> "$HOME/codex-provider-phase"
 		printf '%s' '{"status":"ok","command":"printf SLOW","explanation":"slow result","assumptions":[],"riskHint":"safe"}' > "$result"
@@ -167,7 +170,10 @@ case "$prompt" in
 		sleep 10 &
 		intent_fake_child=$!
 		printf '%s %s\n' "$$" "$intent_fake_child" > "$HOME/claude-provider-pid"
-		wait "$intent_fake_child"
+		if ! wait "$intent_fake_child"; then
+			printf 'phase=child-interrupted\n' >> "$HOME/claude-provider-phase"
+			exit 130
+		fi
 		trap - INT TERM
 		printf 'phase=completed\n' >> "$HOME/claude-provider-phase"
         printf '%s' '{"is_error":false,"structured_output":{"status":"ok","command":"printf CLAUDE_SLOW","explanation":"slow Claude result","assumptions":[],"riskHint":"safe"}}'

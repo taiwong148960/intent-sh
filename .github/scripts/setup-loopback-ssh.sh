@@ -269,7 +269,10 @@ done
   printf 'loopback sshd did not publish its PID\n' >&2
   exit 1
 }
-read -r sshd_pid < "$expected_pid_file"
+# Newer OpenSSH releases create the root-started daemon's PID file with mode
+# 0600. The path is fixed inside the validated job-owned state directory, so
+# read it with the same bounded sudo authority used to start and stop sshd.
+sshd_pid=$(sudo -n cat -- "$expected_pid_file")
 [[ $sshd_pid =~ ^[0-9]{1,10}$ ]] || {
   printf 'loopback sshd published an invalid PID\n' >&2
   exit 1
