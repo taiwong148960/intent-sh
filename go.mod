@@ -1,6 +1,6 @@
 module github.com/taiwong148960/intent-sh
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/creack/pty v1.1.24
@@ -9,4 +9,4 @@ require (
 	mvdan.cc/sh/v3 v3.12.0
 )
 
-require golang.org/x/sys v0.41.0
+require golang.org/x/sys v0.47.0
